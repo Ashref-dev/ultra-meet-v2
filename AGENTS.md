@@ -1,10 +1,18 @@
 # AGENTS.md · Ultra Transcribe
 
-Guidance for anyone (human or agent) changing this repo. Read it before editing. `README.md` covers usage and data layout; `DESIGN.md` covers visual decisions; `QA.md` records what was actually verified.
+Guidance for anyone (human or agent) changing this repo. Read it before editing. `README.md` covers usage; `DESIGN.md` covers visual decisions; `QA.md` records what was actually verified; `CHANGELOG.md` lists releases.
 
 ## Product in one paragraph
 
 A macOS menu-bar agent (`LSUIElement`, bundle `tn.achraf.ultratranscribe`, by achraf.tn, site ultra.achraf.tn). One click records **You** (microphone, green) and **Colleagues** (Mac audio, orange) on separate tracks. After Stop, Qwen3-ASR transcribes locally in a Python/MLX worker. Only when the user clicks **Analyze with AI** is the transcript text, never audio, sent to their OpenRouter model, using an editable template. There is no local language model.
+
+## Priorities, not afterthoughts
+
+These are part of every change, planned up front and reviewed like features:
+
+- **UI and UX.** Every feature ships with its idle, active, loading, empty and error states designed, consistent with the design system below, and checked on screen.
+- **Versioning.** [Semantic Versioning](https://semver.org): `MAJOR.MINOR.PATCH`. While in `0.x`, breaking changes bump MINOR, everything else PATCH. `CFBundleShortVersionString` is the semver; `CFBundleVersion` is a build number that only ever increases. Tag releases `vX.Y.Z` and record them in `CHANGELOG.md`.
+- **Updates and update management.** Users must always know which version they run and how to get the next one (Settings → Credits → Check for Updates, today the GitHub Releases page). Next step: an in-app checker against the GitHub Releases API, then signed, notarized automatic updates (for example Sparkle). Never ship a change that makes an older install unable to upgrade: keep data formats backward compatible and migrations tested.
 
 ## Non-negotiables
 
@@ -73,7 +81,7 @@ Visual authority: the warm "Transcript AI" recorder reference. Mode: Operate. Sc
 - **Tokens only.** Colors, radii and motion come from `Theme`: `background`, `paper`, `line`, `secondary`, `orange` (primary action), `you` (green), `colleagues` (orange), radii 8/6, `feedback` 160 ms, `selection` 240 ms snappy. Never hardcode a hex or a radius in a view.
 - **One logo.** Draw the mark only with `LogoMark` (SwiftUI) or `LogoGlyph.dots` (AppKit). The full icon ("Ember": macOS grid, baked shadow, lit orange plate, flat white dots) is `LogoGlyph.appIcon(size:)`; `scripts/icon/generate.sh` renders `AppIcon` from it and Credits shows it. Never hand-draw a "similar" mark or a second icon.
 - **One accent.** Orange means "act" (record, primary buttons, focus, selection). Green and orange also identify speakers, and that pairing is reserved for You and Colleagues everywhere: avatars, rails, waveform, talk-time bar, toggles.
-- **Type voice.** SF for content; monospaced uppercase `MonoLabel` for metadata, tabs and button labels. Titles 18–26 pt semibold with slight negative tracking.
+- **Type voice.** SF for content; monospaced uppercase `MonoLabel` for metadata, tabs and button labels. Titles 18 to 26 pt semibold with slight negative tracking.
 - **Shared controls only:** `ControlStyle` (primary/secondary/quiet), `IconButton`, `SourcePill`/`SourcePicker`, `ToggleChip`, `SwitchKnob`, `Segmented`, `TabStrip`, `EditableTitle`, `NoteEditor`, `DotProgress`, `DotWaveform`, `SettingsSection`/`SettingsRow`/`SettingsToggle`, `RowStyle`, `card()`. Extend these; don't fork them.
 - **No system blue.** Custom selection (`RowStyle(selected:)`), `.focusEffectDisabled()` where a ring would appear on open, and `makeFirstResponder(nil)` when presenting windows and popovers.
 - **Omit before adding.** If an element doesn't help the next action, remove it. No explanatory filler, no counts nobody asked for, one short footnote per section at most. Copy is plain, specific and short.
@@ -84,7 +92,8 @@ Visual authority: the warm "Transcript AI" recorder reference. Mode: Operate. Sc
 
 ## Shipping
 
-- Bump `CFBundleShortVersionString`/`CFBundleVersion` in `packaging/Info.plist` for user-visible releases.
+- Bump `CFBundleShortVersionString` (semver) and `CFBundleVersion` (build, always increasing) in `packaging/Info.plist`, add a `CHANGELOG.md` entry, update `QA.md`, then tag `vX.Y.Z` and publish a GitHub release with the zipped app.
 - Deliver by copying `build/Ultra Transcribe.app` to `~/Desktop` and `~/Applications`. Move old copies to the Trash, don't delete them, then verify the signature.
-- Commit locally with a short imperative subject and bullet body; never push without being asked.
-- Update `README.md`, `DESIGN.md`, `QA.md` and `Sources/Resources/Help.md` when behavior or design changes.
+- Commit with a short imperative subject and bullet body; never push or publish without being asked.
+- Update `README.md`, `DESIGN.md`, `QA.md`, `CHANGELOG.md` and `Sources/Resources/Help.md` when behavior or design changes.
+- Writing style everywhere (docs, UI copy, commits, release notes): plain, specific and professional. No em dashes, no hype words, no emoji.

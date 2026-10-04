@@ -1,74 +1,79 @@
+<p align="center"><img src="docs/cover.png" alt="Ultra Transcribe" width="820"></p>
+
 # Ultra Transcribe
 
-A menu-bar meeting recorder for macOS, by [achraf.tn](https://achraf.tn) · [ultra.achraf.tn](https://ultra.achraf.tn). One click records your microphone (**You**) and your Mac’s audio (**Colleagues**) on separate tracks, transcribes them locally with Qwen3-ASR, and, only when you ask, turns the transcript into meeting notes with an OpenRouter model.
+**Meeting notes for the AI-native era.** Ultra Transcribe is a macOS menu-bar app for teams that meet often and need clear notes fast. Start a meeting in one click, get an accurate transcript that shows what you said and what your colleagues said, then turn it into a summary, decisions and action items when you need them.
 
-Requires Apple Silicon and macOS 15 or later. This build is signed with an Apple Development certificate, not notarized.
+- **One click from the menu bar.** Meetings start instantly and name themselves. No window to manage, no Dock icon.
+- **Clear speaker labels.** Your microphone is recorded as **You** and your Mac's call audio as **Colleagues**, on separate tracks.
+- **Transcribed on your Mac.** Qwen3-ASR runs locally on Apple Silicon. Audio is never uploaded.
+- **Multilingual by design.** People can switch languages sentence by sentence; you choose which languages your meetings use.
+- **AI notes on demand.** Click **Analyze with AI** to send the transcript text to the OpenRouter model you choose, with templates for different kinds of meetings.
+
+Ultra Transcribe is built for consensual meetings. Let participants know when you record.
+
+By [achraf.tn](https://achraf.tn) · [ultra.achraf.tn](https://ultra.achraf.tn)
+
+## Install
+
+Download the latest release from [Releases](https://github.com/Ashref-dev/ultra-meet-v2/releases), unzip it and move **Ultra Transcribe** to Applications. Requires an Apple Silicon Mac with macOS 15 or later.
+
+This pre-release is signed for development and not yet notarized. On first launch, right-click the app and choose **Open**. macOS then asks for microphone and system-audio permission. Settings → Transcription downloads the speech model once.
 
 ## Use
 
-- **Left-click** the menu-bar icon: recorder panel. Toggle You / Colleagues, then **Start recording**. The meeting is created and named instantly; the panel gets out of the way.
-- **Right-click** the icon: native menu with Start, Pause/Resume, Stop, Meeting Library, Settings, Quit.
-- The icon is the whole status: while recording its dots move with the conversation, paused fades it, and a ripple runs while transcribing. No timer in the menu bar; the panel has it.
-- While recording, the panel shows the editable meeting name, talk time per side, and a multi-line note field (Return for new lines, scrolls with soft fades) that writes straight into the meeting’s notes.
-- The library sidebar collapses with the toolbar button or ⌃⌘S.
-- **Stop** finalizes audio, queues local transcription and opens the meeting. Transcripts are grouped into speaker turns: You (green) and Colleagues (orange). Arabic and other right-to-left lines are right-aligned.
-- **AI notes → Analyze with AI** sends the transcript text (never audio) to your OpenRouter model with the selected template. The result has a summary, discussion, decisions, action items for You and for Colleagues, and open questions. Auto-named meetings get a descriptive title; names you typed are kept.
+- **Left-click** the menu-bar icon for the recorder: choose You and Colleagues, then **Start recording**. While recording you see the meeting name (click to rename), talk time per side, a live waveform and a note field.
+- **Right-click** the icon for Start, Pause, Resume, Stop, Meeting Library, Settings and Quit.
+- **Stop** saves the audio, transcribes it and opens the meeting. Transcripts are grouped into speaker turns, with right-to-left languages aligned correctly.
+- **AI notes → Analyze with AI** produces a summary, discussion, decisions, action items for you and for your colleagues, and open questions. Automatically named meetings get a descriptive title.
 
-The app is an agent (`LSUIElement`): no Dock icon, no ⌘-Tab entry.
-
-## Settings
-
-| Pane | What |
+| Shortcut | Action |
 |---|---|
-| General | Appearance, open at login, shortcuts |
-| Recording | Default sources, microphone, Voice Isolation mic mode, permissions |
-| Transcription | Model with measured memory and a recommendation for this Mac, languages spoken, names and terms |
-| AI Analysis | OpenRouter key (validated, stored in Keychain), model picker over the live OpenRouter catalog, analysis templates |
-| Storage | Audio retention, library location |
-| Credits | Version, ultra.achraf.tn, achraf.tn, Check for Updates |
+| ⌘N | Start recording |
+| ⌘⇧P | Pause or resume |
+| ⌘⇧S | Stop and transcribe |
+| ⌘L | Meeting library |
+| ⌃⌘S | Toggle sidebar |
+| ⌘, | Settings |
 
 ## Speech models
 
-Measured on Apple Silicon: memory footprint (Activity Monitor “Memory”) while transcribing 2 minutes of real meeting audio.
+Measured on Apple Silicon while transcribing two minutes of real meeting audio.
 
-| Model | Loaded | Peak while transcribing | Speed | Recommended for |
-|---|---|---|---|---|
-| Fast · Qwen3-ASR 0.6B 8-bit | 1.2 GB | 1.9 GB | ~85× real time | 8 GB Macs |
-| Balanced · Qwen3-ASR 1.7B 8-bit | 2.5 GB | 3.5 GB | ~40× | 12–16 GB |
-| Best · Qwen3-ASR 1.7B BF16 | 4.0 GB | 5.0 GB | ~27× | 16 GB and up |
+| Model | Peak memory | Speed | Recommended for |
+|---|---|---|---|
+| Fast · Qwen3-ASR 0.6B 8-bit | 1.9 GB | about 85× real time | 8 GB Macs |
+| Balanced · Qwen3-ASR 1.7B 8-bit | 3.5 GB | about 40× | 12 to 16 GB |
+| Best · Qwen3-ASR 1.7B BF16 | 5.0 GB | about 27× | 16 GB and up |
 
-Memory is used only while a meeting is being transcribed; the worker process exits afterwards. Long meetings add about 0.25 GB per hour per track for decoded audio.
+Memory is used only while a meeting is being transcribed. Settings shows these numbers and recommends a model for your Mac.
 
-## Transcription pipeline
+## How transcription works
 
-`Sources/Resources/worker.py`, run in a private runtime under `~/Library/Application Support/UltraTranscribe/Runtime`:
+`Sources/Resources/worker.py` runs in a private Python runtime:
 
 1. Each track is decoded to mono 16 kHz and high-passed at 70 Hz.
-2. A noise-floor-relative energy gate splits speech into utterances at natural pauses (≥0.45 s), so people can switch languages between sentences.
-3. Each utterance gets mild spectral denoising (noise profile from the track’s own pauses) and gain normalization to −20 dBFS, up to +30 dB for quiet voices.
-4. Qwen3-ASR picks the language per utterance. With **Languages spoken** set, a logits constraint limits that choice to your languages (plus “no speech”). On a real 12-minute English/Saudi-Arabic meeting this removed every Chinese, Hindi, Persian, Dutch and Russian misdetection.
-5. Filler-only lines, named sound events (“Cough.”) and microphone lines that repeat Mac audio are dropped.
+2. Speech is split into utterances at natural pauses, so each one is usually in a single language.
+3. Each utterance is lightly denoised and normalized, which lifts quiet voices by up to 30 dB.
+4. Qwen3-ASR detects the language of each utterance, limited to the languages you chose in Settings.
+5. Filler words, named sound events and microphone lines that repeat the call audio are removed.
 
-Transcription runs after Stop, not live. The best model transcribed that 12-minute meeting in about 70 seconds on this Mac.
+On a 12-minute English and Saudi Arabic meeting, limiting detection to English and Arabic removed every misdetected language. Transcription runs after you stop, not live.
 
-## Data
+## Privacy
 
-```text
-~/Library/Application Support/UltraTranscribe/
-  Meetings/<UUID>/meeting.json, microphone.wav, system.caf, transcript.json
-  Models/{best,large,small}/
-  Runtime/
-  preferences.json
-```
+- Audio and transcripts stay in `~/Library/Application Support/UltraTranscribe`.
+- Nothing is sent anywhere unless you click Analyze with AI, validate a key, open the model catalog or download a model.
+- Your OpenRouter key is stored in the macOS Keychain.
+- Audio of transcribed meetings is deleted after the retention period you choose; transcripts and notes are kept.
 
-Files are not encrypted by the app; use FileVault. The OpenRouter key lives in the Keychain.
-
-## Build
+## Build from source
 
 ```sh
 swift test
-bash scripts/build.sh          # builds, bundles uv and resources, signs with your Apple Development identity if present
-bash scripts/icon/generate.sh  # re-renders the app icon from Sources/Views/LogoGlyph.swift
+bash scripts/build.sh            # signed app in build/
+bash scripts/icon/generate.sh    # app icon from Sources/Views/LogoGlyph.swift
+bash scripts/cover/generate.sh   # docs/cover.png
 ```
 
-Python checks: `basedpyright --project pyrightconfig.json` and `ruff check Sources/Resources/worker.py`.
+Python checks: `basedpyright --project pyrightconfig.json` and `ruff check Sources/Resources/worker.py`. Contributor guidance is in [AGENTS.md](AGENTS.md), design decisions in [DESIGN.md](DESIGN.md), and release notes in [CHANGELOG.md](CHANGELOG.md).

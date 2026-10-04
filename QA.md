@@ -1,49 +1,45 @@
-# QA · 2.1 (polish pass)
+# QA
 
-- Logo consistency checked on screen: app icon, Credits icon, menu bar icon and panel header all render the same lattice from `LogoGlyph.swift`.
-- App icon "Ember" (chosen from 5 concepts): Apple grid, baked shadow, lit orange plate, rim light, flat white dot matrix; seen in Credits on screen; contact sheet checked at 512/128/64/32 px on light and dark, shadows fall below.
-- Credits tab: version 2.1.0 (3), links to ultra.achraf.tn and achraf.tn, Check for Updates (opens ultra.achraf.tn until GitHub releases exist).
+What was verified for the current release, and how. Update this file with every release; say plainly what was not verified.
 
-- Menu bar shows only the glyph, no timer (screenshots while recording and transcribing; the ripple was visible). The faded paused state was added afterwards and not captured on screen.
-- Panel note field: taller, focused with an orange ring. Typing was not automated, because synthetic keystrokes would reach the foreground app.
-- Library sidebar collapses and expands; Settings panes (General, Recording, Transcription, Storage) checked on screen.
-- AI analysis with the user's key and model renamed `Meeting · Sat, 3 Oct at 21:55` to “Launch Plan Task Review” and produced all sections in 69 s.
-- RAM benchmark in README. 34 unit tests pass; tests no longer touch the real Keychain.
-- Rebrand: bundle ID `tn.achraf.ultratranscribe`. The saved OpenRouter key migrates from the old Keychain entry; macOS asks once for microphone and Mac-audio permission and to allow Keychain access.
+## 0.5.0
 
-# QA · 2.0 (menu-bar redesign)
+Environment: Apple Silicon, 24 GB memory, macOS 27. App built with `scripts/build.sh`, signed with Apple Development, `codesign --verify --deep --strict` passing.
 
-Verified on this Mac (Apple Silicon, macOS 27), with the app built by `scripts/build.sh`, signed with Apple Development, `codesign --verify --deep --strict` passing.
+### Automated
 
-## Automated
+- `swift test`: 34 tests pass, none skipped. They cover persistence, crash recovery, retention, preference migration (including the language setting), templates, automatic titles and AI rename rules, analysis output parsing across model formats, speaker labels and grouping, right-to-left detection, the talk-time meter, model recommendation by memory, and failure paths without a model or key. Tests use a temporary library and never touch the Keychain.
+- `basedpyright`: 0 errors. `ruff`: clean.
 
-- `swift test`: 32 tests pass (persistence, recovery, retention, legacy preferences and language migration, template persistence, auto-title and AI rename rules, analysis output parsing, speaker labels and grouping, RTL detection, talk-share meter, transcription queue without a model, analysis without a key).
-- `basedpyright` 0 errors; `ruff` clean.
+### Used through the real interface
 
-## Driven through the real UI
+Clicks were real mouse events on targets found through the Accessibility API, limited to the app's own windows and menus.
 
-Clicks were real mouse events at targets located by the accessibility API.
+- Menu-bar agent: no Dock icon; left-click panel, right-click menu; Start, Pause, Resume and Stop from the menu; meeting named automatically.
+- Menu-bar icon shows only the logo: live dots while recording, a ripple while transcribing.
+- English, Arabic and French speech played through Mac audio was transcribed as Colleagues; Stop opened the speaker-grouped transcript.
+- Analyze with AI with a real OpenRouter key renamed an automatically named meeting and returned every section in 69 seconds.
+- Library sidebar collapses and expands; Settings panes and Credits were checked on screen.
+- App icon, Credits icon, menu-bar icon and panel logo render from the same `LogoGlyph.swift`.
 
-- Launch: agent app, no Dock icon; panel opens from the icon; no focus ring on ⋯.
-- Right-click menu: Start Recording, Pause, Resume, Stop. Meeting auto-named `Meeting · Sun, 4 Oct at 08:24`.
-- Live: menu-bar timer; panel live card with participants, talk-time bar, note field and green/orange waveform; paused state dims the timer and flattens the icon.
-- English, Arabic and French speech played through Mac audio was transcribed correctly as Colleagues. French was kept verbatim while only English and Arabic were allowed.
-- Stop opened the library on the new meeting with a speaker-grouped transcript.
-- AI notes without a key: inline message, then Open Settings jumped to AI Analysis; the model catalog loaded 466 OpenRouter models with prices.
-- Sidebar: paper selection, no blue highlight; layout stays put after interacting with the detail pane.
+### Recognition study
 
-## Recognition study (real 12-minute English/Saudi-Arabic meeting)
+A real 12-minute English and Saudi Arabic meeting was transcribed with each pipeline.
 
-| Variant | Lines in a wrong language/script |
+| Pipeline | Lines in a wrong language |
 |---|---|
-| 1.0 pipeline (25 s chunks, free language detection) | 32 (Chinese, Hindi, Persian, Dutch, Russian, Cantonese, Portuguese) |
-| Utterance segmentation + English/Arabic constraint + denoise | 0 |
+| 25-second chunks, free language detection | 32 (Chinese, Hindi, Persian, Dutch, Russian, Cantonese, Portuguese) |
+| Utterance segmentation, denoise, English and Arabic only | 0 |
 
-Rejected after measurement: a “Saudi Arabic” context hint (the model recited it on silence and drifted Arabic into English), and envelope-correlation speaker-bleed detection (did not fire on real room noise and dropped one genuine line).
+Rejected after measurement: a "Saudi Arabic" context hint (recited on silence, pushed Arabic into English) and envelope-correlation bleed detection (did not trigger on real room noise, removed a real line).
 
-## Not verified
+### Memory benchmark
 
-- A paid OpenRouter analysis (no key on this Mac). Request building, output parsing and rename rules are unit-tested.
-- Effect of Voice Isolation mic mode on accuracy.
-- Live transcription: not implemented; transcription runs after Stop.
-- Notarized distribution.
+`proc_pid_rusage` physical footprint while transcribing two minutes of real audio: 0.6B 1.9 GB, 1.7B 8-bit 3.5 GB, 1.7B BF16 5.0 GB.
+
+### Not verified
+
+- Typing into the panel note field by automation (keystrokes could reach another app).
+- The paused menu-bar icon and the rename highlight on screen.
+- Effect of Voice Isolation on accuracy.
+- Notarized distribution and in-app update installation.

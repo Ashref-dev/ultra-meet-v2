@@ -315,8 +315,8 @@ struct CreditsSettings: View {
     private static let icon = LogoGlyph.appIcon(size: 192)
     static let website = URL(string: "https://ultra.achraf.tn")!
     static let author = URL(string: "https://achraf.tn")!
-    /// Updates are published on the website for now; point this at the GitHub releases API once the repository is public.
-    static let updates = URL(string: "https://ultra.achraf.tn")!
+    /// Releases are published on GitHub; an in-app checker against the Releases API is the next step (see AGENTS.md).
+    static let updates = URL(string: "https://github.com/Ashref-dev/ultra-meet-v2/releases")!
     let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "Development"
     let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String
     @State private var hovering = false
