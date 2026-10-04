@@ -1,0 +1,12 @@
+.build/
+build/
+.DS_Store
+__pycache__/
+.codegraph/
+.impeccable/review/
+.qa/
+.venv
+*.log
+.codegraph
+.omo/
+.ruff_cache/

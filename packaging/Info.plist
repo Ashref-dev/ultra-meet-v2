@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>CFBundleName</key><string>Ultra Transcribe</string>
+<key>CFBundleDisplayName</key><string>Ultra Transcribe</string>
+<key>CFBundleIdentifier</key><string>tn.ashref.ultratranscribe</string>
+<key>CFBundleExecutable</key><string>UltraTranscribe</string>
+<key>CFBundleVersion</key><string>2</string>
+<key>CFBundleShortVersionString</key><string>2.0.0</string>
+<key>LSUIElement</key><true/>
+<key>CFBundlePackageType</key><string>APPL</string>
+<key>LSMinimumSystemVersion</key><string>15.0</string>
+<key>NSMicrophoneUsageDescription</key><string>Records your voice, labeled “You”, for meeting transcripts made on this Mac. Audio is never uploaded.</string>
+<key>NSAudioCaptureUsageDescription</key><string>Records your colleagues from call audio, labeled “Colleagues”, on this Mac. No screen capture, no video, no audio uploads.</string>
+<key>NSHighResolutionCapable</key><true/>
+<key>CFBundleIconFile</key><string>AppIcon</string>
+</dict></plist>
