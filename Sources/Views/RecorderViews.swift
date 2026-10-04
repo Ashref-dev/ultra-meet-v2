@@ -20,7 +20,6 @@ struct RecorderControls: View {
                     HStack(spacing: 8) {
                         if state.stopping { ProgressView().controlSize(.mini).tint(.white) } else { RoundedRectangle(cornerRadius: 1.5).fill(.white).frame(width: 8, height: 8) }
                         Text(state.stopping ? "Saving" : "Stop")
-                        Text(Meeting.timestamp(state.elapsed)).opacity(0.6).monospacedDigit()
                     }
                 }
                 .buttonStyle(ControlStyle(kind: .primary))

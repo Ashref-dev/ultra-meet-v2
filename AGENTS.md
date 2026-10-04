@@ -40,7 +40,7 @@ These are part of every change, planned up front and reviewed like features:
 ## Commands (run what you touch, once, and read the output)
 
 ```sh
-swift build && swift test                              # 46+ tests must pass, none skipped
+swift build && swift test                              # 47+ tests must pass, none skipped
 basedpyright --project pyrightconfig.json              # worker types: 0 errors
 ruff check Sources/Resources/worker.py scripts/eval/eval.py
 bash scripts/build.sh                                  # signed .app in build/

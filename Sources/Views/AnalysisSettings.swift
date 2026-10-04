@@ -63,6 +63,8 @@ struct OpenRouterKeyField: View {
     @ObservedObject var state: AppState
     enum KeyStatus: Equatable { case idle, checking, valid(String), invalid(String) }
     @State private var key = ""
+    /// The key in the Keychain, so loading it doesn't count as an edit that needs validating again.
+    @State private var saved = ""
     @State private var status = KeyStatus.idle
     var body: some View {
         VStack(spacing: 0) {
@@ -70,7 +72,7 @@ struct OpenRouterKeyField: View {
                 Image(systemName: "key").font(.system(size: 11)).foregroundStyle(Theme.secondary)
                 SecureField("", text: $key, prompt: Text("sk-or-v1-…"))
                     .textFieldStyle(.plain).font(.system(size: 13, design: .monospaced))
-                    .onChange(of: key) { _, _ in if status != .checking { status = .idle } }
+                    .onChange(of: key) { _, value in if value != saved && status != .checking { status = .idle } }
                     .onSubmit(validate)
                 Button(status == .checking ? "Checking" : "Validate & Save", action: validate)
                     .buttonStyle(ControlStyle(kind: .primary, compact: true))
@@ -89,7 +91,8 @@ struct OpenRouterKeyField: View {
             .padding(.horizontal, 14).frame(height: 40)
         }
         .onAppear {
-            key = state.readKey()
+            saved = state.readKey()
+            key = saved
             if !key.isEmpty { status = .valid("Saved in Keychain") }
         }
     }
@@ -113,13 +116,14 @@ struct OpenRouterKeyField: View {
             do {
                 let info = try await OpenRouter.validate(key: candidate)
                 try state.saveOpenRouterKey(candidate)
+                saved = candidate
                 if state.analysisFailure?.message.contains("API key") == true { state.analysisFailure = nil }
                 status = .valid("Valid · \(info.label.map { "\($0) · " } ?? "")\(info.summary)")
             } catch { status = .invalid(error.localizedDescription) }
         }
     }
     func remove() {
-        do { try state.saveOpenRouterKey(""); key = ""; status = .idle }
+        do { try state.saveOpenRouterKey(""); saved = ""; key = ""; status = .idle }
         catch { status = .invalid(error.localizedDescription) }
     }
 }

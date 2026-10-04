@@ -1,3 +1,4 @@
+import AVFoundation
 import Foundation
 import XCTest
 @testable import UltraTranscribe
@@ -176,5 +177,24 @@ final class UpgradeTests: XCTestCase {
         XCTAssertFalse(state.isProtected(id))
         state.liveID = id
         XCTAssertTrue(state.isProtected(id))
+    }
+
+    func testPlaybackLiftsQuietTracksButNeverTurnsLoudOnesDown() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        func tone(rms decibels: Float) throws -> URL {
+            let url = root.appendingPathComponent("\(decibels).caf")
+            let format = try XCTUnwrap(AVAudioFormat(standardFormatWithSampleRate: 48000, channels: 1))
+            let buffer = try XCTUnwrap(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 48000 * 3))
+            buffer.frameLength = buffer.frameCapacity
+            let amplitude = pow(10, decibels / 20) * sqrt(2)
+            for index in 0..<Int(buffer.frameLength) { buffer.floatChannelData![0][index] = amplitude * sin(Float(index) * 2 * .pi * 220 / 48000) }
+            try AVAudioFile(forWriting: url, settings: format.settings).write(from: buffer)
+            return url
+        }
+        XCTAssertEqual(AudioPlayback.comfortableGain(try tone(rms: -40)), 22, accuracy: 0.5)
+        XCTAssertEqual(AudioPlayback.comfortableGain(try tone(rms: -50)), 24, accuracy: 0.01, "Boost is capped")
+        XCTAssertEqual(AudioPlayback.comfortableGain(try tone(rms: -10)), 0, "Loud tracks are left alone")
     }
 }

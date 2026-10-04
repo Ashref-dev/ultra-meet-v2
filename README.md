@@ -18,7 +18,7 @@ By [achraf.tn](https://achraf.tn) · [ultra.achraf.tn](https://ultra.achraf.tn)
 
 Download the latest release from [Releases](https://github.com/Ashref-dev/ultra-meet-v2/releases), unzip it and move **Ultra Transcribe** to Applications. Requires an Apple Silicon Mac with macOS 15 or later.
 
-This pre-release is signed for development and not yet notarized. On first launch, right-click the app and choose **Open**. A short setup walks through microphone and Mac audio permission, the speech model, your languages and an optional OpenRouter key.
+This pre-release is signed for development and not yet notarized. On first launch, right-click the app and choose **Open**. The download contains no speech models; a short setup walks through microphone and Mac audio permission, downloads the speech model you pick, sets your languages and an optional OpenRouter key.
 
 Updates: Settings → Credits checks for new releases and installs them in place, after verifying that the download is Ultra Transcribe signed by the same developer. The app also checks once a day and tells you when a new version is out; you can turn that off.
 
@@ -26,7 +26,7 @@ Updates: Settings → Credits checks for new releases and installs them in place
 
 - **Left-click** the menu-bar icon for the recorder: choose You and Colleagues, then **Start recording**. While recording you see the meeting name (click to rename), talk time per side, the latest transcript lines, a live waveform and a note field. A warning appears if your microphone is silent or no call audio plays on this Mac.
 - **Right-click** the icon for Start, Pause, Resume, Stop, Meeting Library, Settings, updates and Quit. **⌃⌥⌘R** starts or stops recording from any app.
-- **Stop** saves the audio, finishes the transcript and opens the meeting. A conversation map shows when each side spoke; click it or any timestamp to play both sides together, at up to 2×, with the current line highlighted. Lines are grouped into speaker turns, labeled by language in mixed-language meetings, and right-to-left languages align correctly. Unsure lines are underlined; right-click a line to correct it or transcribe it again as another language. Corrections offer to add new names to Names and terms.
+- **Stop** saves the audio, finishes the transcript and opens the meeting. A conversation map shows when each side spoke; click it or any timestamp to play both sides together, at up to 2×, with the current line highlighted. Lines are grouped into speaker turns, labeled by language in mixed-language meetings, and right-to-left languages align correctly. Click a line to play it, double-click to fix a typo. Unsure lines are underlined; right-click a line to transcribe it again as another language. Corrections offer to add new names to Names and terms.
 - **AI notes → Analyze with AI** produces a summary, discussion, decisions, action items for you and for your colleagues, and open questions. The model also gets talk time per side, the languages heard, your typed notes and which lines were unclear. Automatically named meetings get a descriptive title.
 
 | Shortcut | Action |

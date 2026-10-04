@@ -244,6 +244,8 @@ struct TranscriptionSettings: View {
 /// The three local speech models with memory, speed and install state, plus the download control.
 struct SpeechModelList: View {
     @ObservedObject var state: AppState
+    /// Setup offers the download as its main button instead.
+    var offersDownload = true
     var recommended: ASRModel { ASRModel.recommended(forMemory: ProcessInfo.processInfo.physicalMemory) }
     var body: some View {
         ForEach(Array(ASRModel.allCases.reversed().enumerated()), id: \.element) { index, model in
@@ -261,9 +263,9 @@ struct SpeechModelList: View {
                 }
             }
             .padding(14)
-        } else if !state.engine.ready(state.preferences.model) {
+        } else if offersDownload && !state.engine.ready(state.preferences.model) {
             RowDivider()
-            SettingsRow(title: "\(state.preferences.model.shortLabel) isn’t installed", detail: "\(state.preferences.model.size) download, one time.") {
+            SettingsRow(title: "\(state.preferences.model.shortLabel) isn’t downloaded yet", detail: "\(state.preferences.model.size) download, one time.") {
                 Button("Download") { state.runOperation { await state.installModels() } }
                     .buttonStyle(ControlStyle(kind: .primary, compact: true)).disabled(state.operationTask != nil)
             }
@@ -286,7 +288,7 @@ struct SpeechModelList: View {
                                 .background(Theme.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: Theme.chipRadius, style: .continuous))
                         }
                     }
-                    Text("≈ \(model.memoryGB.formatted(.number.precision(.fractionLength(1)))) GB memory · \(model.speed)× real time").font(.system(size: 11.5)).foregroundStyle(Theme.secondary)
+                    Text("≈ \(String(format: "%.1f", model.memoryGB)) GB memory · \(model.speed)× real time").font(.system(size: 11.5)).foregroundStyle(Theme.secondary)
                 }
                 Spacer()
                 MonoLabel(state.engine.ready(model) ? "Installed" : model.size)

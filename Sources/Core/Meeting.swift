@@ -32,13 +32,8 @@ enum ASRModel: String, Codable, CaseIterable, Identifiable {
         case .best: return "Best · Qwen3-ASR 1.7B full precision"
         }
     }
-    var shortLabel: String {
-        switch self {
-        case .small: return "0.6B"
-        case .large: return "1.7B · 8-bit"
-        case .best: return "1.7B · BF16"
-        }
-    }
+    /// "Fast", "Balanced" or "Best": the name people pick it by.
+    var shortLabel: String { label.components(separatedBy: " · ")[0] }
     /// Peak memory while transcribing, measured on Apple Silicon with 2 minutes of meeting audio.
     var memoryGB: Double {
         switch self {

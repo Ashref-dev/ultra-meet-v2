@@ -8,7 +8,7 @@ Ultra Transcribe lives in the menu bar. Click the dot-matrix icon for the record
 
 **Analyze with AI.** In a meeting’s AI notes tab, pick a template and click Analyze with AI. The transcript text, never audio, goes to the OpenRouter model you chose in Settings → AI Analysis. You get a summary, decisions and action items for you and your colleagues, and automatically named meetings get a descriptive title. Templates are editable system prompts.
 
-**Transcript.** The conversation map shows when each side spoke; click it or a timestamp to play both sides from there, at up to 2×. Underlined lines were hard to hear. Right-click a line to copy it, correct it in place, or transcribe it again as another language; new names in a correction can be added to Names and terms.
+**Transcript.** The conversation map shows when each side spoke; click it, a timestamp or a line to play both sides from there, at up to 2×. Double-click a line to fix a typo; Return or clicking away saves, Esc cancels. Underlined lines were hard to hear. Right-click a line to copy it or transcribe it again as another language; new names in a correction can be added to Names and terms. If a meeting's audio was deleted, the transcript says so and stays readable.
 
 **Library.** Search titles, transcripts and notes; accents and Arabic spelling variants are ignored. Copy copies the current tab; Export saves everything as Markdown. Audio of transcribed meetings is deleted after the retention period in Settings → Storage; transcripts and notes are kept.
 

@@ -4,11 +4,11 @@ What was verified for the current release, and how. Update this file with every 
 
 ## 0.6.0
 
-Environment: Apple Silicon, 24 GB memory. App built with `scripts/build.sh`, signed with Apple Development. This release was verified in code, with automated tests and with the transcription worker on real and synthetic audio. The new interface was not driven by automation: it is listed under "Not verified" until checked by hand.
+Environment: Apple Silicon, 24 GB memory. App built with `scripts/build.sh`, signed with Apple Development. This release was verified in code, with automated tests, with the transcription worker on real and synthetic audio, and (build 6) by driving the built app through Accessibility with screenshots.
 
 ### Automated
 
-- `swift test`: 46 tests pass, none skipped. New tests cover semantic version ordering, choosing the newest GitHub release (drafts skipped), refusing an unsigned update, talk time and the AI input (speaker split, languages, typed notes, unclear lines), Arabic and accent search folding, decoding 0.5 files with the new fields, name suggestions from corrections, editing a line, stopping a live recording (finishes instead of transcribing twice), silence tracking per side, swapping app copies on update (no staged copy left), and keeping a meeting protected while its live transcription runs.
+- `swift test`: 47 tests pass, none skipped. New tests cover semantic version ordering, choosing the newest GitHub release (drafts skipped), refusing an unsigned update, talk time and the AI input (speaker split, languages, typed notes, unclear lines), Arabic and accent search folding, decoding 0.5 files with the new fields, name suggestions from corrections, editing a line, stopping a live recording (finishes instead of transcribing twice), silence tracking per side, swapping app copies on update (no staged copy left), keeping a meeting protected while its live transcription runs, and the playback level (a -40 dBFS track is lifted 22 dB, boosts stop at 24 dB, loud tracks are not turned down).
 - `basedpyright`: 0 errors. `ruff`: clean (worker and `scripts/eval/eval.py`).
 - The streaming reader and resampler return sample-identical audio to `soundfile` for the recorder's WAV (Int16) and CAF (Float32) files, read at once or in random chunks.
 
@@ -27,9 +27,23 @@ Measured and rejected: a single loudness margin of 4 dB (merged room noise and a
 
 Live transcription: the synthetic meeting was rewritten in real time as growing files while the worker followed it. Lines appeared during the replay; the final transcript was ready about 4 seconds after the files closed and scored the same as offline. A worker whose parent exits finishes the transcript and quits. After a code review, live mode tracks which audio it has transcribed instead of a single position, so speech that only becomes detectable as the noise floor settles is still transcribed; the replay scored the same afterwards (0.047, nothing missed).
 
+### Call audio (build 6)
+
+Every earlier `system.caf` had a run of about 45 zero samples every 557 samples. The output device (headphones) ran at 44.1 kHz while the file was written as 48 kHz, and the timeline padding filled the shortfall. After the fix, a recording made while a 1 kHz tone and a spoken sentence played through the headphones measured: tone at 1000.0 Hz (was about 1088 Hz), 0 zero gaps inside the signal, both tracks 32.9 s long within 0.1 s, and the sentence transcribed word for word.
+
+### Used through the real interface (build 6)
+
+Driven through Accessibility on the built app; test meeting "Test: audio quality check".
+
+- Click a line: playback starts there and the line highlights. Double-click: the line becomes a field with the cursor at the end; typed text was appended and Return saved it to `meeting.json`. Esc and click-away paths are in code, not exercised.
+- Scrubber: dragging to 80% moved the time to 00:27 without restarting audio; Resume played from 00:27.
+- Audio files moved out of the folder: the transcript shows the missing-audio notice with Show in Finder, and clicking a line does nothing. A meeting with no transcript and no audio shows the notice instead of Transcribe.
+- First run with an empty home folder (`CFFIXED_USER_HOME`): no models installed, sizes shown, Skip on optional steps, "Download and Continue" on the speech step; the runtime installed and the 1 GB Fast model downloaded with live progress on the Ready page. Switch knobs centered (screenshot).
+
 ### Not verified
 
-- Every new interface surface on screen: setup window, live lines in the panel and meeting window, health hints, conversation map, line menu and in-place editing, two-track playback and speed, update states in Credits, update banner and menu item, two-tone waveform, menu-bar progress fill.
+- On screen: live lines in the panel and meeting window, health hints, update states in Credits, update banner and menu item, menu-bar progress fill, the waveform filling a wide window after 40 seconds of recording (verified in code: 480 columns of history).
+- Hearing playback: the level and limiter are measured in tests, not listened to.
 - The global shortcut, notifications (permission prompt, click to open), and installing an update end to end (needs a newer signed release on GitHub).
 - Live transcription with a real recording and microphone; only replayed files were tested.
 - Typing into the panel note field by automation; Voice Isolation's effect on accuracy; notarized distribution.

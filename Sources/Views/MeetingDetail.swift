@@ -8,6 +8,7 @@ struct MeetingDetail: View {
     @State private var deleteAudioConfirmation = false
     @StateObject private var playback = AudioPlayback()
     @State private var copied = false
+    @State private var playingLineID: UUID?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var isActive: Bool { meeting.id == state.activeID }
     var isLive: Bool { meeting.id == state.liveID }
@@ -23,7 +24,7 @@ struct MeetingDetail: View {
             content.frame(maxWidth: .infinity, maxHeight: .infinity)
                 .id(tab)
                 .transition(.opacity.animation(.easeOut(duration: 0.14)))
-            if playback.duration > 0 { player }
+            if playback.duration > 0 { PlayerBar(playback: playback, clock: playback.clock) }
             if isActive {
                 VStack(spacing: 0) {
                     Divider()
@@ -38,6 +39,10 @@ struct MeetingDetail: View {
         .onChange(of: state.activeID) { _, id in if id != nil { playback.stop() } }
         .onChange(of: meeting.audioDeleted) { _, deleted in if deleted { playback.stop() } }
         .onDisappear { playback.stop() }
+        .onReceive(playback.clock.$position) { position in
+            let line = playback.duration > 0 ? playingLine(at: position) : nil
+            if line != playingLineID { playingLineID = line }
+        }
         .task(id: copied) {
             guard copied else { return }
             try? await Task.sleep(for: .seconds(1.6))
@@ -85,7 +90,7 @@ struct MeetingDetail: View {
     var actions: some View {
         Menu {
             Button("Analyze with AI") { tab = "AI notes"; state.analyze(meeting.id) }.disabled(meeting.segments.isEmpty || state.analyzingID != nil)
-            Button("Transcribe Again") { state.transcribe(meeting.id) }.disabled(isActive || isTranscribing || isLive || meeting.audioDeleted)
+            Button("Transcribe Again") { state.transcribe(meeting.id) }.disabled(!canSeek || isTranscribing || isLive)
             Divider()
             Group {
                 Button("Play Meeting") { play(audioFiles) }
@@ -108,7 +113,7 @@ struct MeetingDetail: View {
             Image(systemName: "exclamationmark.circle").foregroundStyle(Theme.orange)
             Text(message).font(.system(size: 12)).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
             Spacer()
-            if !meeting.audioDeleted && !isTranscribing && meeting.segments.isEmpty {
+            if canSeek && !isTranscribing && meeting.segments.isEmpty {
                 Button("Transcribe Again") { state.transcribe(meeting.id) }.buttonStyle(ControlStyle(compact: true))
             }
         }
@@ -145,10 +150,14 @@ struct MeetingDetail: View {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 22) {
                     VStack(alignment: .leading, spacing: 8) {
-                        ConversationMap(segments: meeting.segments, duration: meeting.duration, position: playback.duration > 0 ? playback.position : nil, seek: canSeek ? { play(audioFiles, at: $0) } : nil)
+                        PlayheadMap(segments: meeting.segments, duration: meeting.duration, clock: playback.clock, showsPlayhead: playback.duration > 0, seek: canSeek ? { play(audioFiles, at: $0) } : nil)
                         TalkTimeLabels(meeting: meeting)
                     }
                     .frame(maxWidth: Theme.readingWidth + 84, alignment: .leading)
+                    if let audioNotice, !isActive {
+                        InlineHint(symbol: "speaker.slash", text: audioNotice, action: meeting.audioDeleted ? nil : ("Show in Finder", { NSWorkspace.shared.open(state.library.folder(meeting.id)) }))
+                            .frame(maxWidth: Theme.readingWidth + 84)
+                    }
                     if let suggestion = state.termSuggestion, suggestion.meetingID == meeting.id {
                         InlineHint(symbol: "text.badge.plus", text: "Add \(suggestion.terms.map { "“\($0)”" }.formatted(.list(type: .and))) to Names and terms, so it’s recognized next time?",
                                    action: ("Add", { state.addTerms(suggestion.terms) }), dismiss: { state.termSuggestion = nil })
@@ -156,16 +165,16 @@ struct MeetingDetail: View {
                             .transition(.opacity)
                     }
                     ForEach(SpeakerBlock.group(meeting.segments)) { block in
-                        SpeakerBlockView(block: block, playingID: playingLine?.id, redoingID: state.redoingLineID, showLanguage: meeting.languages.count > 1, actions: lineActions)
+                        SpeakerBlockView(block: block, playingID: playingLineID, redoingID: state.redoingLineID, showLanguage: meeting.languages.count > 1, actions: lineActions)
                     }
                 }
                 .padding(.horizontal, 32).padding(.vertical, 24)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .animation(reduceMotion ? nil : Theme.feedback, value: state.termSuggestion)
             }
-            .onChange(of: playingBlock) { _, block in
-                guard let block, playback.playing else { return }
-                withAnimation(reduceMotion ? nil : Theme.selection) { proxy.scrollTo(block, anchor: .center) }
+            .onChange(of: playingLineID) { _, line in
+                guard let line, playback.playing else { return }
+                withAnimation(reduceMotion ? nil : Theme.selection) { proxy.scrollTo(line, anchor: .center) }
             }
         }
     }
@@ -204,7 +213,10 @@ struct MeetingDetail: View {
                 Text(isLive ? "Lines appear here as people finish sentences." : "Your transcript appears when you stop.").font(.system(size: 13)).foregroundStyle(Theme.secondary)
             } else {
                 Text(meeting.status == .ready ? "No speech was detected." : "No transcript yet.").font(.system(size: 18, weight: .medium))
-                if !meeting.audioDeleted {
+                if let audioNotice {
+                    Label { Text(audioNotice) } icon: { Image(systemName: "speaker.slash").foregroundStyle(Theme.orange) }
+                        .font(.system(size: 12.5)).foregroundStyle(Theme.secondary).multilineTextAlignment(.center).frame(maxWidth: 420)
+                } else {
                     Button("Transcribe") { state.transcribe(meeting.id) }.buttonStyle(ControlStyle()).padding(.top, 4)
                 }
             }
@@ -212,37 +224,24 @@ struct MeetingDetail: View {
         .padding(28).frame(maxWidth: .infinity, maxHeight: .infinity)
     }
     var canSeek: Bool { !meeting.audioDeleted && !isActive && !audioFiles.isEmpty }
+    /// Why the recording can't be played, so a click on a line never fails silently.
+    var audioNotice: String? {
+        if meeting.audioDeleted { return "This meeting’s audio was deleted, by you or by the audio retention setting, so it can’t be played or transcribed again. The transcript and notes are kept." }
+        if audioFiles.isEmpty && meeting.status != .recording { return "This meeting’s audio files are missing from its folder. They may have been moved or deleted, so the meeting can’t be played or transcribed again. The transcript and notes are kept." }
+        return nil
+    }
     var lineActions: LineActions {
         LineActions(
             canSeek: canSeek,
-            canRedo: !meeting.audioDeleted && !isActive && !isTranscribing && state.redoingLineID == nil && !state.engine.busy,
+            canRedo: canSeek && !isActive && !isTranscribing && state.redoingLineID == nil && !state.engine.busy,
             languages: state.preferences.languages.isEmpty ? ["English", "Arabic", "French"] : state.preferences.languages,
             seek: { play(audioFiles, at: $0.start) },
             redo: { state.retranscribe(meeting.id, line: $0, as: $1) },
             edit: { state.editLine(meeting.id, line: $0.id, text: $1) })
     }
-    /// The line being heard right now, highlighted and kept in view while the meeting plays.
-    var playingLine: TranscriptSegment? {
-        guard playback.duration > 0 else { return nil }
-        return meeting.segments.last { playback.sources.contains($0.source) && $0.start <= playback.position + 0.15 && playback.position < $0.end + 0.6 }
-    }
-    var playingBlock: UUID? {
-        guard let line = playingLine else { return nil }
-        return SpeakerBlock.group(meeting.segments).first { $0.segments.contains { $0.id == line.id } }?.id
-    }
-    var player: some View {
-        HStack(spacing: 12) {
-            Button { playback.togglePause() } label: { Image(systemName: playback.playing ? "pause.fill" : "play.fill").contentTransition(.symbolEffect(.replace)) }
-                .buttonStyle(.plain).accessibilityLabel(playback.playing ? "Pause playback" : "Resume playback")
-            MonoLabel(playback.sources.map { $0 == "microphone" ? "You" : $0 == "system" ? "Colleagues" : "Recording" }.joined(separator: " + "))
-            Text(Meeting.timestamp(playback.position)).font(Theme.mono).monospacedDigit()
-            Slider(value: Binding(get: { playback.position }, set: { playback.seek($0) }), in: 0...max(1, playback.duration)).tint(Theme.orange).controlSize(.small).accessibilityLabel("Playback position")
-            Text(Meeting.timestamp(playback.duration)).font(Theme.mono).foregroundStyle(Theme.secondary)
-            Button { playback.cycleRate() } label: { Text("\(playback.rate.formatted(.number.precision(.fractionLength(0...2))))×").monospacedDigit() }
-                .buttonStyle(ControlStyle(kind: .quiet, compact: true)).help("Playback speed").accessibilityLabel("Playback speed")
-            Button { playback.stop() } label: { Image(systemName: "xmark") }.buttonStyle(.plain).foregroundStyle(Theme.secondary).accessibilityLabel("Stop playback")
-        }
-        .padding(.horizontal, 32).padding(.vertical, 12).background(Theme.background)
+    /// The line being heard at `position`, highlighted and kept in view while the meeting plays.
+    func playingLine(at position: Double) -> UUID? {
+        meeting.segments.last { playback.sources.contains($0.source) && $0.start <= position + 0.15 && position < $0.end + 0.6 }?.id
     }
 
     // MARK: Audio
@@ -260,7 +259,10 @@ struct MeetingDetail: View {
         }
     }
     func play(_ urls: [URL], at seconds: Double = 0) {
-        guard !urls.isEmpty else { return }
+        guard !urls.isEmpty else {
+            if let audioNotice { state.error = audioNotice }
+            return
+        }
         if Set(playback.sources) == Set(urls.map { $0.deletingPathExtension().lastPathComponent }) && playback.duration > 0 {
             playback.seek(seconds)
             if !playback.playing { playback.togglePause() }
@@ -274,6 +276,51 @@ struct MeetingDetail: View {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(content, forType: .string)
         copied = true
+    }
+}
+
+/// The conversation map with a playhead that follows playback without redrawing the transcript around it.
+private struct PlayheadMap: View {
+    let segments: [TranscriptSegment]
+    let duration: Double
+    @ObservedObject var clock: AudioPlayback.Clock
+    let showsPlayhead: Bool
+    let seek: ((Double) -> Void)?
+    var body: some View {
+        ConversationMap(segments: segments, duration: duration, position: showsPlayhead ? clock.position : nil, seek: seek)
+    }
+}
+
+/// Play and pause, the scrubber, speed and close. Dragging moves the playhead freely; audio jumps there on release.
+private struct PlayerBar: View {
+    @ObservedObject var playback: AudioPlayback
+    @ObservedObject var clock: AudioPlayback.Clock
+    @State private var scrub: Double?
+    var body: some View {
+        HStack(spacing: 12) {
+            Button { playback.togglePause() } label: {
+                Image(systemName: playback.playing ? "pause.fill" : "play.fill").font(.system(size: 11, weight: .bold)).frame(width: 14)
+                    .contentTransition(.symbolEffect(.replace))
+            }
+            .buttonStyle(ControlStyle(compact: true))
+            .accessibilityLabel(playback.playing ? "Pause playback" : "Resume playback")
+            MonoLabel(playback.sources.map { $0 == "microphone" ? "You" : $0 == "system" ? "Colleagues" : "Recording" }.joined(separator: " + "))
+            Text(Meeting.timestamp(scrub ?? clock.position)).font(Theme.mono).monospacedDigit()
+            Slider(value: Binding(get: { scrub ?? clock.position }, set: { scrub = $0 }), in: 0...max(1, playback.duration)) { editing in
+                guard !editing, let target = scrub else { return }
+                playback.seek(target)
+                scrub = nil
+            }
+            .tint(Theme.orange).controlSize(.small).accessibilityLabel("Playback position")
+            Text(Meeting.timestamp(playback.duration)).font(Theme.mono).foregroundStyle(Theme.secondary)
+            Button { playback.cycleRate() } label: { Text("\(playback.rate.formatted(.number.precision(.fractionLength(0...2))))×").monospacedDigit() }
+                .buttonStyle(ControlStyle(kind: .quiet, compact: true)).help("Playback speed").accessibilityLabel("Playback speed")
+            Button { playback.stop() } label: { Image(systemName: "xmark").font(.system(size: 10, weight: .bold)) }
+                .buttonStyle(ControlStyle(kind: .quiet, compact: true)).help("Close the player").accessibilityLabel("Stop playback")
+        }
+        .padding(.horizontal, 32).padding(.vertical, 10)
+        .background(Theme.background)
+        .overlay(alignment: .top) { Divider() }
     }
 }
 

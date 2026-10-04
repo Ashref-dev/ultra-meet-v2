@@ -8,11 +8,13 @@ from __future__ import annotations
 import os
 import re
 import struct
+import threading
 import time
 import unicodedata
 from collections.abc import Callable, Iterator
 from difflib import SequenceMatcher
 from enum import StrEnum
+from fnmatch import fnmatch
 from math import exp, gcd
 from pathlib import Path
 from typing import Annotated, Final, NamedTuple, Protocol, cast
@@ -21,7 +23,6 @@ from uuid import uuid4
 import numpy as np
 import soundfile as sf
 import typer
-from huggingface_hub import snapshot_download
 from numpy.typing import NDArray
 from pydantic import BaseModel, ConfigDict
 from scipy.ndimage import maximum_filter1d, uniform_filter1d
@@ -520,14 +521,34 @@ def spoken_languages(languages: str) -> list[str]:
 
 @app.command()
 def download(models: Path, model: Annotated[ASRSize, typer.Option()] = ASRSize.best) -> None:
-    """Download public speech-model weights once; recording and inference never upload data."""
-    progress(models, f"Downloading {MODELS[model]}. This can take several minutes…", 0.05)
-    snapshot_download(
-        MODELS[model],
-        local_dir=models / model,
-        allow_patterns=["*.json", "*.safetensors", "*.txt", "*.model", "*.tiktoken", "*.jinja"],
-    )
-    (models / model / ".ready").write_text(MODELS[model])
+    """Download public speech-model weights once; recording and inference never upload data.
+
+    Plain HTTPS, because Xet transfers stalled at 0 bytes on a phone hotspot where HTTPS downloaded normally.
+    Progress is measured from the bytes on disk, so a long download never looks stuck.
+    """
+    os.environ["HF_HUB_DISABLE_XET"] = "1"
+    from huggingface_hub import HfApi, snapshot_download
+
+    folder = models / model
+    patterns = ["*.json", "*.safetensors", "*.txt", "*.model", "*.tiktoken", "*.jinja"]
+    progress(models, "Preparing the download…", 0.02)
+    files = HfApi().model_info(MODELS[model], files_metadata=True).siblings or []
+    total = sum(file.size or 0 for file in files if any(fnmatch(file.rfilename, pattern) for pattern in patterns))
+    finished = threading.Event()
+
+    def report() -> None:
+        while not finished.wait(1):
+            done = sum(path.stat().st_size for path in folder.rglob("*") if path.is_file())
+            progress(models, f"Downloading the speech model · {done / 1e9:.2f} of {total / 1e9:.1f} GB", 0.05 + 0.9 * min(1, done / max(1, total)))
+
+    reporter = threading.Thread(target=report, daemon=True)
+    reporter.start()
+    try:
+        _ = snapshot_download(MODELS[model], local_dir=folder, allow_patterns=patterns)
+    finally:
+        finished.set()
+        reporter.join()
+    (folder / ".ready").write_text(MODELS[model])
     progress(models, "Speech model ready for offline use", 1)
 
 

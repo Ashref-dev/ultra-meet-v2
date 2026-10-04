@@ -5,7 +5,7 @@
 <key>CFBundleDisplayName</key><string>Ultra Transcribe</string>
 <key>CFBundleIdentifier</key><string>tn.achraf.ultratranscribe</string>
 <key>CFBundleExecutable</key><string>UltraTranscribe</string>
-<key>CFBundleVersion</key><string>5</string>
+<key>CFBundleVersion</key><string>6</string>
 <key>CFBundleShortVersionString</key><string>0.6.0</string>
 <key>LSUIElement</key><true/>
 <key>CFBundlePackageType</key><string>APPL</string>

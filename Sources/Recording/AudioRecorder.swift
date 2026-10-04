@@ -5,7 +5,8 @@ import AVFoundation
 @MainActor
 final class LevelMeter: ObservableObject {
     struct Sample: Equatable { var you: Float; var colleagues: Float }
-    static let length = 72
+    /// Enough history to fill the widest window: one dot column per sample.
+    static let length = 480
     @Published private(set) var history = Array(repeating: Sample(you: 0, colleagues: 0), count: LevelMeter.length)
     @Published private(set) var youSeconds: Double = 0
     @Published private(set) var colleaguesSeconds: Double = 0

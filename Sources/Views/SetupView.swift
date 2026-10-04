@@ -40,8 +40,11 @@ struct SetupView: View {
                 if step > 0 { Button("Back") { go(step - 1) }.buttonStyle(ControlStyle(kind: .quiet)) }
                 else { Button("Skip Setup") { done() }.buttonStyle(ControlStyle(kind: .quiet)) }
                 Spacer()
-                Button(step == Self.steps.count - 1 ? "Start Using Ultra Transcribe" : step == 0 ? "Get Started" : "Continue") {
-                    step == Self.steps.count - 1 ? done() : go(step + 1)
+                if canSkip { Button("Skip") { go(step + 1) }.buttonStyle(ControlStyle(kind: .quiet)).transition(.opacity) }
+                Button(primaryTitle) {
+                    if step == Self.steps.count - 1 { done(); return }
+                    if needsDownload { state.runOperation { await state.installModels() } }
+                    go(step + 1)
                 }
                 .buttonStyle(ControlStyle(kind: .primary))
                 .keyboardShortcut(.defaultAction)
@@ -53,6 +56,24 @@ struct SetupView: View {
         .tint(Theme.orange)
         .onChange(of: step) { _, value in if value == 1 && microphone == .authorized { check.start() } else { check.stop() } }
         .onDisappear { check.stop() }
+    }
+
+    /// The selected speech model still has to be downloaded, and nothing is downloading yet.
+    var needsDownload: Bool { step == 3 && !state.engine.ready(state.preferences.model) && !state.engine.busy }
+    /// Optional steps whose action hasn't been taken can be skipped; the action stays available in Settings.
+    var canSkip: Bool {
+        switch step {
+        case 1: microphone != .authorized
+        case 2: macAudio == nil
+        case 3: needsDownload
+        case 4: true
+        default: false
+        }
+    }
+    var primaryTitle: String {
+        if step == 0 { return "Get Started" }
+        if step == Self.steps.count - 1 { return "Start Using Ultra Transcribe" }
+        return needsDownload ? "Download and Continue" : "Continue"
     }
 
     @ViewBuilder var page: some View {
@@ -113,8 +134,8 @@ struct SetupView: View {
 
     var speech: some View {
         VStack(alignment: .leading, spacing: 16) {
-            title("Speech recognition", "Pick a model for this Mac and the languages people speak. Transcription runs here, offline.")
-            VStack(spacing: 0) { SpeechModelList(state: state) }.card()
+            title("Speech recognition", "Pick a model for this Mac and the languages people speak. The model downloads once, then transcription runs here, offline.")
+            VStack(spacing: 0) { SpeechModelList(state: state, offersDownload: false) }.card()
             VStack(alignment: .leading, spacing: 8) {
                 MonoLabel("Languages spoken")
                 LanguageChips(state: state)
@@ -127,13 +148,26 @@ struct SetupView: View {
         VStack(alignment: .leading, spacing: 16) {
             title("AI notes, optional", "Analyze with AI sends the transcript text, never audio, to the OpenRouter model you choose. It needs a key from openrouter.ai.")
             VStack(spacing: 0) { OpenRouterKeyField(state: state) }.card()
-            Text("You can add or change the key later in Settings → AI Analysis.").font(.system(size: 11.5)).foregroundStyle(Theme.secondary)
+            Text("Optional. Skip it and add a key later in Settings → AI Analysis; transcripts work without it.").font(.system(size: 11.5)).foregroundStyle(Theme.secondary)
         }
     }
 
     var ready: some View {
         VStack(alignment: .leading, spacing: 16) {
             title("You’re ready", "Ultra Transcribe lives in the menu bar. Click its dots to record; right-click for quick actions.")
+            if state.engine.busy && state.processingID == nil {
+                VStack(alignment: .leading, spacing: 8) {
+                    DotProgress(value: state.engine.fraction, dots: 40).frame(height: 6)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(state.engine.message).font(.system(size: 12.5))
+                        Text("It continues in the background if you close setup.").font(.system(size: 11.5)).foregroundStyle(Theme.secondary)
+                    }
+                }
+                .padding(14).card()
+            } else if !state.engine.ready(state.preferences.model) {
+                InlineHint(symbol: "arrow.down.circle", text: "\(state.preferences.model.shortLabel) (\(state.preferences.model.size)) isn’t downloaded yet. Meetings are transcribed once it is; until then recordings are kept.",
+                           action: ("Download", { state.runOperation { await state.installModels() } }))
+            }
             VStack(spacing: 0) {
                 SettingsToggle(title: "Notify me when a transcript is ready", detail: "Only while you’re in another app.", isOn: Binding(get: { state.preferences.notifyWhenReady }, set: { on in
                     state.preferences.notifyWhenReady = on

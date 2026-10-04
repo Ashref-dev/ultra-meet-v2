@@ -32,7 +32,10 @@ struct SpeakerBlockView: View {
     var showLanguage = false
     var actions: LineActions?
     @State private var editingID: UUID?
+    @State private var hoveredID: UUID?
     @State private var draft = ""
+    /// Starts at the end of the line: focusing a field selects everything, and one keystroke would replace the line.
+    @State private var selection: TextSelection?
     @FocusState private var focused: Bool
     var body: some View {
         let color = Theme.speakerColor(block.source)
@@ -64,23 +67,32 @@ struct SpeakerBlockView: View {
                 .frame(width: 44, alignment: .leading)
             VStack(alignment: segment.isRightToLeft ? .trailing : .leading, spacing: 6) {
                 if editingID == segment.id {
-                    TextField("Line", text: $draft, axis: .vertical)
+                    // Same font and position as the line, so editing looks like typing into the transcript.
+                    TextField("Line", text: $draft, selection: $selection, axis: .vertical)
                         .textFieldStyle(.plain).font(.system(size: 14)).lineSpacing(5)
                         .multilineTextAlignment(segment.isRightToLeft ? .trailing : .leading)
                         .focused($focused)
                         .onSubmit { commit(segment) }
                         .onExitCommand { editingID = nil }
-                        .padding(.horizontal, 7).padding(.vertical, 4)
-                        .background(Theme.paper, in: RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous))
-                        .overlay(RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous).strokeBorder(Theme.orange.opacity(0.55), lineWidth: 1.5))
-                    MonoLabel("Return saves · Esc cancels")
+                        .onChange(of: focused) { _, isFocused in
+                            guard editingID == segment.id else { return }
+                            if isFocused { Task { @MainActor in selection = TextSelection(insertionPoint: draft.endIndex) } } else { commit(segment) }
+                        }
+                        .padding(.horizontal, 6).padding(.vertical, 3)
+                        .background(Theme.paper, in: RoundedRectangle(cornerRadius: Theme.chipRadius, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: Theme.chipRadius, style: .continuous).strokeBorder(Theme.orange.opacity(0.55), lineWidth: 1.5))
+                        .padding(.horizontal, -6).padding(.vertical, -3)
+                    MonoLabel("Return or click away saves · Esc cancels")
                 } else {
                     Text(segment.text)
                         .underline(segment.isUncertain, pattern: .dot, color: Theme.secondary.opacity(0.6))
-                        .font(.system(size: 14)).lineSpacing(5).textSelection(.enabled)
+                        .font(.system(size: 14)).lineSpacing(5)
                         .foregroundStyle(segment.isUncertain ? Theme.secondary : Color.primary)
                         .multilineTextAlignment(segment.isRightToLeft ? .trailing : .leading)
-                        .help(segment.isUncertain ? "The recognizer was unsure about this line. Right-click to correct it or transcribe it again." : "")
+                        .contentShape(Rectangle())
+                        .gesture(TapGesture(count: 2).onEnded { if actions != nil { beginEditing(segment) } }
+                            .exclusively(before: TapGesture().onEnded { if let actions, actions.canSeek { actions.seek(segment) } }))
+                        .help(actions == nil ? "" : hint(segment))
                 }
                 if redoingID == segment.id { DotProgress(value: nil, dots: 14).frame(width: 70, height: 4) }
             }
@@ -92,9 +104,14 @@ struct SpeakerBlockView: View {
             }
         }
         .padding(.horizontal, 6).padding(.vertical, 2)
-        .background(playingID == segment.id ? color.opacity(0.09) : .clear, in: RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous))
+        .background(playingID == segment.id ? color.opacity(0.09) : hoveredID == segment.id && actions != nil && editingID == nil ? Theme.line.opacity(0.45) : .clear,
+                    in: RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous))
         .padding(.horizontal, -6)
+        .onHover { inside in
+            if inside { hoveredID = segment.id } else if hoveredID == segment.id { hoveredID = nil }
+        }
         .animation(Theme.feedback, value: playingID)
+        .animation(Theme.feedback, value: hoveredID)
         .id(segment.id)
         .contextMenu {
             if let actions {
@@ -103,7 +120,7 @@ struct SpeakerBlockView: View {
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(segment.text, forType: .string)
                 }
-                Button("Edit Line") { draft = segment.text; editingID = segment.id; focused = true }
+                Button("Edit Line") { beginEditing(segment) }
                 Divider()
                 Menu("Transcribe Again As") {
                     ForEach(actions.languages, id: \.self) { language in Button(language) { actions.redo(segment, language) } }
@@ -114,9 +131,18 @@ struct SpeakerBlockView: View {
             }
         }
     }
+    func beginEditing(_ segment: TranscriptSegment) {
+        draft = segment.text
+        editingID = segment.id
+        Task { @MainActor in focused = true }
+    }
     func commit(_ segment: TranscriptSegment) {
-        actions?.edit(segment, draft)
         editingID = nil
+        actions?.edit(segment, draft)
+    }
+    func hint(_ segment: TranscriptSegment) -> String {
+        let use = actions?.canSeek == true ? "Click to play from here. Double-click to correct." : "Double-click to correct."
+        return segment.isUncertain ? "The recognizer was unsure about this line. \(use)" : use
     }
 }
 

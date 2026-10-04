@@ -236,12 +236,13 @@ struct SpeakerAvatar: View {
     }
 }
 
-/// Dot-matrix progress. `value == nil` shows a travelling pulse.
+/// Dot-matrix progress. `nil`, or no progress yet, shows a travelling pulse so a starting task never looks stalled.
 struct DotProgress: View {
     var value: Double?
     var dots = 32
     var color: Color = Theme.orange
     var body: some View {
+        let value = self.value.flatMap { $0 > 0 ? $0 : nil }
         TimelineView(.animation(minimumInterval: 0.08, paused: value != nil)) { timeline in
             Canvas { context, size in
                 let pitch = size.width / CGFloat(dots)
@@ -313,9 +314,12 @@ struct SwitchKnob: View {
     let isOn: Bool
     var color: Color = Theme.orange
     var body: some View {
-        Capsule().fill(isOn ? color : Theme.secondary.opacity(0.25)).frame(width: 24, height: 14)
-            .overlay(alignment: isOn ? .trailing : .leading) { Circle().fill(.white).padding(2).shadow(color: .black.opacity(0.18), radius: 0.6, y: 0.5) }
-            .animation(.snappy(duration: 0.2), value: isOn)
+        ZStack(alignment: isOn ? .trailing : .leading) {
+            Capsule().fill(isOn ? color : Theme.secondary.opacity(0.25))
+            Circle().fill(.white).frame(width: 10, height: 10).padding(2).shadow(color: .black.opacity(0.18), radius: 0.6)
+        }
+        .frame(width: 24, height: 14)
+        .animation(.snappy(duration: 0.2), value: isOn)
             .accessibilityHidden(true)
     }
 }
