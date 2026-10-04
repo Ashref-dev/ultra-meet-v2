@@ -3,35 +3,12 @@ import SwiftUI
 
 struct AnalysisSettings: View {
     @ObservedObject var state: AppState
-    enum KeyStatus: Equatable { case idle, checking, valid(String), invalid(String) }
-    @State private var key = ""
-    @State private var status = KeyStatus.idle
     @State private var choosingModel = false
     @State private var editing: AnalysisTemplate?
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            SettingsSection(title: "OpenRouter key", footer: "Stored in your macOS Keychain. Only the transcript text is sent, and only when you click Analyze with AI.") {
-                HStack(spacing: 8) {
-                    Image(systemName: "key").font(.system(size: 11)).foregroundStyle(Theme.secondary)
-                    SecureField("", text: $key, prompt: Text("sk-or-v1-…"))
-                        .textFieldStyle(.plain).font(.system(size: 13, design: .monospaced))
-                        .onChange(of: key) { _, _ in if status != .checking { status = .idle } }
-                        .onSubmit(validate)
-                    Button(status == .checking ? "Checking" : "Validate & Save", action: validate)
-                        .buttonStyle(ControlStyle(kind: .primary, compact: true))
-                        .disabled(key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || status == .checking)
-                }
-                .padding(.horizontal, 14).frame(height: 46)
-                RowDivider()
-                HStack(spacing: 8) {
-                    keyStatus
-                    Spacer()
-                    Link(destination: URL(string: "https://openrouter.ai/settings/keys")!) {
-                        HStack(spacing: 4) { Text("Get a key"); Image(systemName: "arrow.up.right").font(.system(size: 8.5, weight: .bold)) }
-                    }
-                    .buttonStyle(ControlStyle(kind: .quiet, compact: true))
-                }
-                .padding(.horizontal, 14).frame(height: 40)
+            SettingsSection(title: "OpenRouter key", footer: "Stored in your macOS Keychain. Only text is sent (the transcript and your notes), and only when you click Analyze with AI.") {
+                OpenRouterKeyField(state: state)
             }
             SettingsSection(title: "Model", footer: "Prices and data policies are the provider’s. Larger models write better notes; fast ones answer in seconds.") {
                 SettingsRow(title: state.preferences.openRouterModel.components(separatedBy: "/").last ?? state.preferences.openRouterModel, detail: state.preferences.openRouterModel) {
@@ -51,10 +28,6 @@ struct AnalysisSettings: View {
                 }
                 .padding(.horizontal, 8).frame(height: 40)
             }
-        }
-        .onAppear {
-            key = Keychain.read()
-            if !key.isEmpty { status = .valid("Saved in Keychain") }
         }
         .sheet(isPresented: $choosingModel) { ModelCatalog(selection: $state.preferences.openRouterModel) }
         .sheet(item: $editing) { template in TemplateEditor(state: state, template: template) }
@@ -82,6 +55,43 @@ struct AnalysisSettings: View {
             Button("Edit") { editing = template }.buttonStyle(ControlStyle(kind: .quiet, compact: true))
         }
         .padding(.horizontal, 14).padding(.vertical, 9)
+    }
+}
+
+/// OpenRouter key entry with validation, shared by Settings and first-run setup. Reads the Keychain only when shown.
+struct OpenRouterKeyField: View {
+    @ObservedObject var state: AppState
+    enum KeyStatus: Equatable { case idle, checking, valid(String), invalid(String) }
+    @State private var key = ""
+    @State private var status = KeyStatus.idle
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 8) {
+                Image(systemName: "key").font(.system(size: 11)).foregroundStyle(Theme.secondary)
+                SecureField("", text: $key, prompt: Text("sk-or-v1-…"))
+                    .textFieldStyle(.plain).font(.system(size: 13, design: .monospaced))
+                    .onChange(of: key) { _, _ in if status != .checking { status = .idle } }
+                    .onSubmit(validate)
+                Button(status == .checking ? "Checking" : "Validate & Save", action: validate)
+                    .buttonStyle(ControlStyle(kind: .primary, compact: true))
+                    .disabled(key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || status == .checking)
+            }
+            .padding(.horizontal, 14).frame(height: 46)
+            RowDivider()
+            HStack(spacing: 8) {
+                keyStatus
+                Spacer()
+                Link(destination: URL(string: "https://openrouter.ai/settings/keys")!) {
+                    HStack(spacing: 4) { Text("Get a key"); Image(systemName: "arrow.up.right").font(.system(size: 8.5, weight: .bold)) }
+                }
+                .buttonStyle(ControlStyle(kind: .quiet, compact: true))
+            }
+            .padding(.horizontal, 14).frame(height: 40)
+        }
+        .onAppear {
+            key = state.readKey()
+            if !key.isEmpty { status = .valid("Saved in Keychain") }
+        }
     }
     @ViewBuilder var keyStatus: some View {
         switch status {

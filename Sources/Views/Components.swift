@@ -261,8 +261,9 @@ struct DotProgress: View {
     }
 }
 
-/// Dot-matrix waveform. Recording: real level history scrolling right-to-left, green where you speak and
-/// orange where colleagues speak. Idle: a quiet static lattice.
+/// Dot-matrix waveform. Recording: real level history scrolling right-to-left, deep green to green where you speak
+/// and ember to orange where colleagues speak, dark at the center line and lighter toward the edges. Idle: a quiet
+/// ember-to-orange shape on the lattice.
 struct DotWaveform: View {
     @ObservedObject var meter: LevelMeter
     var live = false
@@ -279,13 +280,16 @@ struct DotWaveform: View {
             for column in 0..<columns {
                 let index = history.count - columns + column
                 let sample = live && index >= 0 ? history[index] : LevelMeter.Sample(you: 0, colleagues: 0)
-                let color = sample.colleagues > sample.you ? Theme.colleagues : Theme.you
+                let shades = Theme.shades(sample.colleagues > sample.you ? "system" : "microphone")
                 let level = Double(max(sample.you, sample.colleagues))
                 let reach = live ? pow(level, 1.4) * (middle + 0.6) : idleReach(column, columns: columns, middle: middle)
                 for row in 0..<rows {
                     let distance = abs(Double(row) - middle)
                     let active = distance <= reach && (!live || level > 0.12)
-                    let fill: Color = !active ? Theme.secondary.opacity(0.11) : live ? color.opacity(1 - distance / (middle + 1.5) * 0.6) : Theme.secondary.opacity(0.32)
+                    let edge = min(1, distance / max(1, reach + 0.5))
+                    let fill: Color = !active ? Theme.secondary.opacity(0.11)
+                        : live ? shades.deep.mix(with: shades.light, by: edge)
+                        : Theme.colleaguesDeep.mix(with: Theme.orange, by: edge).opacity(0.5)
                     let rect = CGRect(x: xInset + CGFloat(column) * spacing + spacing / 2 - 1.6, y: yInset + CGFloat(row) * spacing + spacing / 2 - 1.6, width: 3.2, height: 3.2)
                     context.fill(Path(ellipseIn: rect), with: .color(fill))
                 }

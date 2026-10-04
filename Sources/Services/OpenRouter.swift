@@ -80,7 +80,7 @@ enum OpenRouter {
         request.timeoutInterval = 300
         request.httpBody = try JSONEncoder().encode(Body(model: model, messages: [
             Message(role: "system", content: instructions(template)),
-            Message(role: "user", content: "Meeting recorded \(meeting.createdAt.formatted(date: .complete, time: .shortened)), \(Meeting.timestamp(meeting.duration)) long.\n\nTranscript:\n\(meeting.transcript)")
+            Message(role: "user", content: meeting.analysisInput)
         ]))
         let response = try JSONDecoder().decode(Response.self, from: await send(request))
         guard let text = response.choices.first?.message.content, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
@@ -92,7 +92,7 @@ enum OpenRouter {
         """
         You turn meeting transcripts into clear, useful meeting notes.
 
-        Speakers: "You" is the person who recorded the meeting and will read these notes. "Colleagues" is everyone else, heard through the computer's audio. People may switch languages mid-meeting (for example English, French and Arabic); understand all of them.
+        Speakers: each line is labeled by where its audio came from, which is reliable. "You" lines come from the microphone of the person who recorded the meeting and will read these notes. "Colleagues" lines come from the computer's audio and can be several different people; tell them apart only by names or roles they mention, and never attribute a Colleagues line to You or the reverse. The talk time shows how much each side spoke. Lines marked [unclear] were hard to hear: use them with care and never build a decision or task on them alone. People may switch languages mid-meeting (for example English, French and Arabic); understand all of them. Notes the recorder typed are their own reminders and may name owners or deadlines.
 
         Focus for this meeting type (\(template.name)):
         \(template.prompt)

@@ -8,10 +8,13 @@ final class LocalEngine: ObservableObject {
     @Published var message = ""
     @Published var fraction: Double = 0
     @Published var busy = false
+    /// Lines transcribed so far for the folder being processed, read from the worker's checkpoint.
+    @Published var partial: [TranscriptSegment] = []
     let root: URL
     private var process: Process?
     private var progressTimer: Timer?
     private var cancellationRequested = false
+    private var partialStamp: Date?
     var models: URL { root.appendingPathComponent("Models") }
     var python: URL { root.appendingPathComponent("Runtime/bin/python") }
     var runtimeReady: Bool {
@@ -41,14 +44,36 @@ final class LocalEngine: ObservableObject {
         }
         try await worker(["download", models.path, "--model", model.rawValue], progressFolder: models)
     }
-    func transcribe(folder: URL, preferences: Preferences) async throws -> [TranscriptSegment] {
+    /// `live` follows a recording that is still being written, until `finish(folder:)`.
+    func transcribe(folder: URL, preferences: Preferences, live: Bool = false) async throws -> [TranscriptSegment] {
         try Task.checkCancellation()
         cancellationRequested = false
         busy = true
         defer { busy = false }
-        try await worker(["transcribe", folder.path, models.path, "--model", preferences.model.rawValue, "--languages", preferences.languages.joined(separator: ","), "--vocabulary", preferences.vocabulary], progressFolder: folder)
+        try? FileManager.default.removeItem(at: folder.appendingPathComponent(Self.finishFile))
+        try await worker(["transcribe", folder.path, models.path, "--model", preferences.model.rawValue, "--languages", preferences.languages.joined(separator: ","), "--vocabulary", preferences.vocabulary] + (live ? ["--follow"] : []), progressFolder: folder)
         return try JSONDecoder().decode(WorkerTranscript.self, from: Data(contentsOf: folder.appendingPathComponent("transcript.json"))).segments
     }
+    /// Tells a live transcription that the recording's files are complete.
+    func finish(folder: URL) throws {
+        try Data().write(to: folder.appendingPathComponent(Self.finishFile))
+    }
+    /// Transcribes one line again, optionally as a given language.
+    func transcribe(line: TranscriptSegment, folder: URL, preferences: Preferences, language: String?) async throws -> TranscriptSegment {
+        try Task.checkCancellation()
+        guard !busy else { throw AppError.message("Wait for the current transcription to finish, then try again.") }
+        cancellationRequested = false
+        busy = true
+        defer { busy = false }
+        let output = folder.appendingPathComponent("line.json")
+        try? FileManager.default.removeItem(at: output)
+        try await worker(["line", folder.path, models.path, "--source", line.source, "--start", String(line.start), "--end", String(line.end), "--model", preferences.model.rawValue, "--language", language ?? "", "--languages", preferences.languages.joined(separator: ","), "--vocabulary", preferences.vocabulary], progressFolder: folder)
+        var result = try JSONDecoder().decode(TranscriptSegment.self, from: Data(contentsOf: output))
+        try? FileManager.default.removeItem(at: output)
+        result.id = line.id
+        return result
+    }
+    static let finishFile = ".finish"
     func cancel() {
         cancellationRequested = true
         if process?.isRunning == true { process?.terminate() }
@@ -60,14 +85,24 @@ final class LocalEngine: ObservableObject {
         message = "Starting local transcription…"
         let progressURL = progressFolder.appendingPathComponent("progress.json")
         if FileManager.default.fileExists(atPath: progressURL.path) { try FileManager.default.removeItem(at: progressURL) }
+        let partialURL = progressFolder.appendingPathComponent("transcript.partial.json")
+        partial = []
+        partialStamp = nil
         progressTimer = Timer.scheduledTimer(withTimeInterval: 0.8, repeats: true) { [weak self] _ in
             Task { @MainActor in
-                guard let self, let data = try? Data(contentsOf: progressURL), let progress = try? JSONDecoder().decode(WorkerProgress.self, from: data) else { return }
-                self.message = progress.message
-                self.fraction = progress.fraction
+                guard let self else { return }
+                if let data = try? Data(contentsOf: progressURL), let progress = try? JSONDecoder().decode(WorkerProgress.self, from: data) {
+                    self.message = progress.message
+                    self.fraction = progress.fraction
+                }
+                let stamp = (try? partialURL.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
+                if let stamp, stamp != self.partialStamp, let data = try? Data(contentsOf: partialURL), let transcript = try? JSONDecoder().decode(WorkerTranscript.self, from: data) {
+                    self.partialStamp = stamp
+                    self.partial = transcript.segments
+                }
             }
         }
-        defer { progressTimer?.invalidate(); progressTimer = nil }
+        defer { progressTimer?.invalidate(); progressTimer = nil; partial = [] }
         try await execute(python, arguments: [resource("worker.py").path] + arguments)
     }
     func execute(_ executable: URL, arguments: [String]) async throws {

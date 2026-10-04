@@ -90,9 +90,21 @@ final class StatusBarController: NSObject {
         } else {
             menu.addItem(entry("Start Recording", symbol: "record.circle", enabled: state.canStart) { [state] in state.startRecording() })
         }
+        if state.preferences.globalShortcut, let toggle = menu.items.last(where: { $0.title == "Start Recording" || $0.title == "Stop Recording" }) {
+            toggle.keyEquivalent = "r"
+            toggle.keyEquivalentModifierMask = [.control, .option, .command]
+        }
         menu.addItem(.separator())
         menu.addItem(entry("Meeting Library…", symbol: "list.bullet.rectangle") { [state] in state.showMeeting(nil) })
         menu.addItem(entry("Settings…", symbol: "gearshape") { [state] in state.showSettings(.general) })
+        if let release = state.updater.available {
+            menu.addItem(entry("Update to \(release.version?.description ?? release.tag)…", symbol: "arrow.down.circle") { [state] in state.showSettings(.credits) })
+        } else {
+            menu.addItem(entry("Check for Updates…", symbol: nil) { [state] in
+                state.showSettings(.credits)
+                Task { await state.updater.check() }
+            })
+        }
         menu.addItem(.separator())
         menu.addItem(entry("Quit Ultra Transcribe", symbol: nil) { NSApp.terminate(nil) })
         return menu
@@ -118,13 +130,19 @@ final class StatusBarController: NSObject {
             timer.invalidate()
             ripple = nil
         }
-        let levels = recording && !paused ? columnLevels() : working ? rippleLevels() : nil
+        let progress = state.processingID != nil ? state.engine.fraction : 0
+        let levels = recording && !paused ? columnLevels() : working ? (progress > 0.03 ? progressLevels(progress) : rippleLevels()) : nil
         let key = paused ? "paused" : levels.map { $0.map { String(Int($0 * 5)) }.joined() } ?? "idle"
         guard key != appearance else { return }
         appearance = key
         button.image = Self.icon(levels: levels, alpha: paused ? 0.4 : 1)
         button.setAccessibilityValue(recording ? (paused ? "Paused" : "Recording \(Meeting.timestamp(state.elapsed))") : working ? "Transcribing" : "Ready")
         button.toolTip = recording ? "\(paused ? "Paused" : "Recording") · \(Meeting.timestamp(state.elapsed))" : working ? "Transcribing \(Int(state.engine.fraction * 100))%" : "Ultra Transcribe"
+    }
+
+    /// Transcription progress: the logo's waveform fills in from left to right.
+    private func progressLevels(_ fraction: Double) -> [Double] {
+        LogoGlyph.heights.indices.map { Double($0) < fraction * Double(LogoGlyph.heights.count) ? Double(LogoGlyph.heights[$0]) / Double(LogoGlyph.rows) : 0 }
     }
 
     private func rippleLevels() -> [Double] {

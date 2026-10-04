@@ -17,7 +17,7 @@ struct SettingsView: View {
                     case .transcription: TranscriptionSettings(state: state)
                     case .analysis: AnalysisSettings(state: state)
                     case .storage: StorageSettings(state: state)
-                    case .credits: CreditsSettings()
+                    case .credits: CreditsSettings(state: state)
                     }
                 }
                 .id(state.settingsPane)
@@ -123,7 +123,7 @@ private func openURL(_ string: String) { if let url = URL(string: string) { NSWo
 struct GeneralSettings: View {
     @ObservedObject var state: AppState
     static let shortcuts: [(String, [String])] = [
-        ("Start recording", ["⌘", "N"]), ("Pause or resume", ["⌘", "⇧", "P"]), ("Stop and transcribe", ["⌘", "⇧", "S"]),
+        ("Start or stop from any app", GlobalHotKey.keys), ("Start recording", ["⌘", "N"]), ("Pause or resume", ["⌘", "⇧", "P"]), ("Stop and transcribe", ["⌘", "⇧", "S"]),
         ("Meeting library", ["⌘", "L"]), ("Toggle sidebar", ["⌃", "⌘", "S"]), ("Import audio", ["⌘", "O"]), ("Settings", ["⌘", ","])
     ]
     var body: some View {
@@ -134,6 +134,11 @@ struct GeneralSettings: View {
                 }
                 RowDivider()
                 SettingsToggle(title: "Open at login", detail: "Starts quietly in the menu bar.", isOn: Binding(get: { state.preferences.launchAtLogin }, set: { state.setLogin($0) }))
+                RowDivider()
+                SettingsToggle(title: "Notify when a transcript is ready", detail: "Only while you’re in another app.", isOn: Binding(get: { state.preferences.notifyWhenReady }, set: { on in
+                    state.preferences.notifyWhenReady = on
+                    if on { Task { await Notifier.requestPermission() } }
+                }))
                 if SMAppService.mainApp.status == .requiresApproval {
                     RowDivider()
                     SettingsRow(title: "Needs your approval", detail: "macOS asks before apps open at login.") {
@@ -142,6 +147,8 @@ struct GeneralSettings: View {
                 }
             }
             SettingsSection(title: "Keyboard", footer: "Left-click the menu bar icon for the recorder, right-click for quick actions.") {
+                SettingsToggle(title: "Start or stop from any app", detail: "Control-Option-Command-R works even when Ultra Transcribe is in the background.", isOn: $state.preferences.globalShortcut)
+                RowDivider()
                 ForEach(Array(Self.shortcuts.enumerated()), id: \.offset) { index, shortcut in
                     if index > 0 { RowDivider() }
                     HStack {
@@ -150,6 +157,11 @@ struct GeneralSettings: View {
                         KeyCaps(keys: shortcut.1)
                     }
                     .padding(.horizontal, 14).frame(height: 36)
+                }
+            }
+            SettingsSection(title: "Setup") {
+                SettingsRow(title: "First-run setup", detail: "Permissions, speech model, languages and AI notes, step by step.") {
+                    Button("Run Again…") { state.showSetup() }.buttonStyle(ControlStyle(compact: true))
                 }
             }
         }
@@ -202,10 +214,7 @@ struct RecordingSettings: View {
 
 struct TranscriptionSettings: View {
     @ObservedObject var state: AppState
-    static let common = ["English", "Arabic", "French", "Spanish", "German", "Italian", "Portuguese", "Turkish", "Hindi", "Chinese", "Japanese", "Korean"]
     let memory = ProcessInfo.processInfo.physicalMemory
-    var recommended: ASRModel { ASRModel.recommended(forMemory: memory) }
-    var shownLanguages: [String] { Self.common + state.preferences.languages.filter { !Self.common.contains($0) } }
     var languageSummary: String {
         switch state.preferences.languages.count {
         case 0: return "Any of 30 languages is detected."
@@ -216,54 +225,51 @@ struct TranscriptionSettings: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             SettingsSection(title: "Speech model", footer: "Runs entirely on this Mac (\(Int((Double(memory) / 1_073_741_824).rounded())) GB memory). Memory is only used while a meeting is being transcribed.") {
-                ForEach(Array(ASRModel.allCases.reversed().enumerated()), id: \.element) { index, model in
-                    if index > 0 { RowDivider() }
-                    modelRow(model)
-                }
-                if state.engine.busy && state.processingID == nil {
-                    RowDivider()
-                    VStack(alignment: .leading, spacing: 8) {
-                        DotProgress(value: state.engine.fraction, dots: 40).frame(height: 6)
-                        HStack {
-                            Text(state.engine.message).font(.system(size: 11.5)).foregroundStyle(Theme.secondary)
-                            Spacer()
-                            Button("Cancel") { state.cancelProcessing() }.buttonStyle(ControlStyle(kind: .quiet, compact: true))
-                        }
-                    }
-                    .padding(14)
-                } else if !state.engine.ready(state.preferences.model) {
-                    RowDivider()
-                    SettingsRow(title: "\(state.preferences.model.shortLabel) isn’t installed", detail: "\(state.preferences.model.size) download, one time.") {
-                        Button("Download") { state.runOperation { await state.installModels() } }
-                            .buttonStyle(ControlStyle(kind: .primary, compact: true)).disabled(state.operationTask != nil)
-                    }
-                }
+                SpeechModelList(state: state)
+            }
+            SettingsSection(title: "While recording") {
+                SettingsToggle(title: "Transcribe while recording", detail: "The transcript is ready seconds after you stop, and you can follow it live. Keeps the speech model in memory during meetings.", isOn: $state.preferences.liveTranscription)
             }
             SettingsSection(title: "Languages spoken", footer: "\(languageSummary) Choose only the languages people speak, so short sounds can’t be mistaken for other languages. Dialects such as Saudi Arabic count as Arabic.") {
-                FlowLayout(spacing: 6) {
-                    ForEach(shownLanguages, id: \.self) { language in
-                        ToggleChip(title: language, isOn: Binding(
-                            get: { state.preferences.languages.contains(language) },
-                            set: { on in
-                                if on { state.preferences.languages.append(language) } else { state.preferences.languages.removeAll { $0 == language } }
-                            }))
-                    }
-                    Menu {
-                        ForEach(Preferences.supportedLanguages.filter { !shownLanguages.contains($0) }, id: \.self) { language in
-                            Button(language) { state.preferences.languages.append(language) }
-                        }
-                    } label: { HStack(spacing: 4) { Text("More"); Image(systemName: "chevron.down").font(.system(size: 8, weight: .bold)) } }
-                    .menuStyle(.button).buttonStyle(ControlStyle(kind: .quiet, compact: true)).menuIndicator(.hidden).fixedSize()
-                }
-                .padding(12)
+                LanguageChips(state: state).padding(12)
             }
-            SettingsSection(title: "Names and terms", footer: "Comma-separated names, products and jargon. Words only: sentences here can confuse recognition.") {
+            SettingsSection(title: "Names and terms", footer: "Comma-separated names, products and jargon. Words only: sentences here can confuse recognition. Correcting a line in a transcript offers to add new names here.") {
                 TextField("", text: $state.preferences.vocabulary, prompt: Text("Achraf, Kubernetes, Q3 roadmap"), axis: .vertical)
                     .textFieldStyle(.plain).font(.system(size: 13)).lineLimit(1...4).padding(14)
             }
         }
     }
-    func modelRow(_ model: ASRModel) -> some View {
+}
+
+/// The three local speech models with memory, speed and install state, plus the download control.
+struct SpeechModelList: View {
+    @ObservedObject var state: AppState
+    var recommended: ASRModel { ASRModel.recommended(forMemory: ProcessInfo.processInfo.physicalMemory) }
+    var body: some View {
+        ForEach(Array(ASRModel.allCases.reversed().enumerated()), id: \.element) { index, model in
+            if index > 0 { RowDivider() }
+            row(model)
+        }
+        if state.engine.busy && state.processingID == nil && state.liveID == nil {
+            RowDivider()
+            VStack(alignment: .leading, spacing: 8) {
+                DotProgress(value: state.engine.fraction, dots: 40).frame(height: 6)
+                HStack {
+                    Text(state.engine.message).font(.system(size: 11.5)).foregroundStyle(Theme.secondary)
+                    Spacer()
+                    Button("Cancel") { state.cancelProcessing() }.buttonStyle(ControlStyle(kind: .quiet, compact: true))
+                }
+            }
+            .padding(14)
+        } else if !state.engine.ready(state.preferences.model) {
+            RowDivider()
+            SettingsRow(title: "\(state.preferences.model.shortLabel) isn’t installed", detail: "\(state.preferences.model.size) download, one time.") {
+                Button("Download") { state.runOperation { await state.installModels() } }
+                    .buttonStyle(ControlStyle(kind: .primary, compact: true)).disabled(state.operationTask != nil)
+            }
+        }
+    }
+    func row(_ model: ASRModel) -> some View {
         let selected = state.preferences.model == model
         return Button { withAnimation(Theme.feedback) { state.preferences.model = model } } label: {
             HStack(alignment: .center, spacing: 12) {
@@ -293,6 +299,30 @@ struct TranscriptionSettings: View {
     }
 }
 
+/// Language toggles: the common ones, any already chosen, and the rest behind More.
+struct LanguageChips: View {
+    @ObservedObject var state: AppState
+    static let common = ["English", "Arabic", "French", "Spanish", "German", "Italian", "Portuguese", "Turkish", "Hindi", "Chinese", "Japanese", "Korean"]
+    var shown: [String] { Self.common + state.preferences.languages.filter { !Self.common.contains($0) } }
+    var body: some View {
+        FlowLayout(spacing: 6) {
+            ForEach(shown, id: \.self) { language in
+                ToggleChip(title: language, isOn: Binding(
+                    get: { state.preferences.languages.contains(language) },
+                    set: { on in
+                        if on { state.preferences.languages.append(language) } else { state.preferences.languages.removeAll { $0 == language } }
+                    }))
+            }
+            Menu {
+                ForEach(Preferences.supportedLanguages.filter { !shown.contains($0) }, id: \.self) { language in
+                    Button(language) { state.preferences.languages.append(language) }
+                }
+            } label: { HStack(spacing: 4) { Text("More"); Image(systemName: "chevron.down").font(.system(size: 8, weight: .bold)) } }
+            .menuStyle(.button).buttonStyle(ControlStyle(kind: .quiet, compact: true)).menuIndicator(.hidden).fixedSize()
+        }
+    }
+}
+
 struct StorageSettings: View {
     @ObservedObject var state: AppState
     var body: some View {
@@ -312,14 +342,14 @@ struct StorageSettings: View {
 }
 
 struct CreditsSettings: View {
+    @ObservedObject var state: AppState
     private static let icon = LogoGlyph.appIcon(size: 192)
     static let website = URL(string: "https://ultra.achraf.tn")!
     static let author = URL(string: "https://achraf.tn")!
-    /// Releases are published on GitHub; an in-app checker against the Releases API is the next step (see AGENTS.md).
-    static let updates = URL(string: "https://github.com/Ashref-dev/ultra-meet-v2/releases")!
     let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "Development"
     let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String
     @State private var hovering = false
+    var updater: Updater { state.updater }
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(spacing: 10) {
@@ -333,6 +363,17 @@ struct CreditsSettings: View {
             }
             .frame(maxWidth: .infinity)
             .padding(.top, 8).padding(.bottom, 26)
+            SettingsSection(title: "Updates", footer: "Checks read the public release list on GitHub. Nothing about you or your meetings is sent. Installing moves this copy to the Trash and relaunches.") {
+                updateRow
+                if case .available(let release) = updater.state, let notes = release.notes?.trimmingCharacters(in: .whitespacesAndNewlines), !notes.isEmpty {
+                    RowDivider()
+                    Text(notes).font(.system(size: 11.5)).foregroundStyle(Theme.secondary).lineLimit(10).textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading).padding(14)
+                }
+                RowDivider()
+                SettingsToggle(title: "Check automatically", detail: "Once a day; tells you when a new version is out.", isOn: $state.preferences.checkForUpdates)
+            }
+            .animation(Theme.feedback, value: updater.state)
             SettingsSection(title: "Links") {
                 SettingsRow(title: "Website", detail: "ultra.achraf.tn") {
                     Link(destination: Self.website) { linkLabel("Open") }.buttonStyle(ControlStyle(compact: true))
@@ -342,8 +383,8 @@ struct CreditsSettings: View {
                     Link(destination: Self.author) { linkLabel("Open") }.buttonStyle(ControlStyle(compact: true))
                 }
                 RowDivider()
-                SettingsRow(title: "Updates", detail: "You’re on version \(version).") {
-                    Link(destination: Self.updates) { linkLabel("Check for Updates") }.buttonStyle(ControlStyle(kind: .primary, compact: true))
+                SettingsRow(title: "All releases", detail: "github.com/Ashref-dev/ultra-meet-v2") {
+                    Link(destination: Updater.releasesPage) { linkLabel("Open") }.buttonStyle(ControlStyle(compact: true))
                 }
             }
             SettingsSection(title: "Built with", footer: "Speech recognition runs locally with Qwen3-ASR on MLX through mlx-audio. AI analysis uses OpenRouter, only when you ask.") {
@@ -357,6 +398,38 @@ struct CreditsSettings: View {
                 .padding(12)
             }
         }
+    }
+    @ViewBuilder var updateRow: some View {
+        switch updater.state {
+        case .idle:
+            SettingsRow(title: "Version \(version)", detail: "Look for a newer version on GitHub.") { checkButton("Check Now") }
+        case .checking:
+            SettingsRow(title: "Checking for updates…") { DotProgress(value: nil, dots: 10).frame(width: 50, height: 5) }
+        case .current(let date):
+            SettingsRow(title: "You’re up to date", detail: "Version \(version) · checked \(date.formatted(.relative(presentation: .named)))") { checkButton("Check Again") }
+        case .available(let release):
+            SettingsRow(title: "Version \(release.version?.description ?? release.tag) is available", detail: busy ? "Finish recording and transcribing first." : "You have \(version).") {
+                HStack(spacing: 6) {
+                    Link(destination: release.page) { linkLabel("Notes") }.buttonStyle(ControlStyle(kind: .quiet, compact: true))
+                    Button(release.archive == nil ? "Download…" : "Install and Relaunch") { Task { await updater.install(release) { busy } } }
+                        .buttonStyle(ControlStyle(kind: .primary, compact: true)).disabled(busy)
+                }
+            }
+        case .installing(let step):
+            SettingsRow(title: step, detail: "Ultra Transcribe relaunches when it’s done.") { DotProgress(value: nil, dots: 10).frame(width: 50, height: 5) }
+        case .failed(let message):
+            SettingsRow(title: "Update didn’t work", detail: message) {
+                HStack(spacing: 6) {
+                    Link(destination: Updater.releasesPage) { linkLabel("GitHub") }.buttonStyle(ControlStyle(kind: .quiet, compact: true))
+                    checkButton("Try Again")
+                }
+            }
+        }
+    }
+    /// Installing quits the app, so it waits for recordings and transcriptions to finish.
+    var busy: Bool { state.activeID != nil || state.isWorking || state.starting || state.analyzingID != nil }
+    func checkButton(_ title: String) -> some View {
+        Button(title) { Task { await updater.check() } }.buttonStyle(ControlStyle(compact: true))
     }
     func linkLabel(_ title: String) -> some View {
         HStack(spacing: 4) { Text(title); Image(systemName: "arrow.up.right").font(.system(size: 8.5, weight: .bold)) }

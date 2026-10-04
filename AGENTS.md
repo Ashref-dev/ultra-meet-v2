@@ -12,12 +12,13 @@ These are part of every change, planned up front and reviewed like features:
 
 - **UI and UX.** Every feature ships with its idle, active, loading, empty and error states designed, consistent with the design system below, and checked on screen.
 - **Versioning.** [Semantic Versioning](https://semver.org): `MAJOR.MINOR.PATCH`. While in `0.x`, breaking changes bump MINOR, everything else PATCH. `CFBundleShortVersionString` is the semver; `CFBundleVersion` is a build number that only ever increases. Tag releases `vX.Y.Z` and record them in `CHANGELOG.md`.
-- **Updates and update management.** Users must always know which version they run and how to get the next one (Settings → Credits → Check for Updates, today the GitHub Releases page). Next step: an in-app checker against the GitHub Releases API, then signed, notarized automatic updates (for example Sparkle). Never ship a change that makes an older install unable to upgrade: keep data formats backward compatible and migrations tested.
+- **Updates and update management.** Users must always know which version they run and how to get the next one. `Updater` reads the GitHub Releases API (Settings → Credits, the right-click menu, and a daily automatic check that notifies), and installs a release in place only if it has the same bundle identifier, the same developer team signature and a higher version; the old copy goes to the Trash. It depends on tags `vX.Y.Z` and one `.zip` asset containing `Ultra Transcribe.app`, so every release must keep that shape. Next steps: notarization, then signed delta updates (for example Sparkle). Never ship a change that makes an older install unable to upgrade: keep data formats backward compatible and migrations tested.
 
 ## Non-negotiables
 
-- Audio never leaves the Mac. Nothing goes to the network unless the user explicitly asks (Analyze, key validation, model catalog, model download).
+- Audio never leaves the Mac. Nothing goes to the network unless the user explicitly asks (Analyze, key validation, model catalog, model download, update install), except the daily update check, which only reads the public GitHub release list and can be turned off.
 - The app is menu-bar first: everything must be doable from the status item (left-click panel, right-click native menu). No Dock icon, no ⌘-Tab entry.
+- Permission prompts only follow a user action: microphone and Mac audio at the first recording or in setup, notifications when the person turns them on.
 - Never lose user data. Recordings, transcripts and notes are the user's. Move to Trash instead of deleting, decode old JSON tolerantly (`decodeIfPresent` with defaults), and migrate rather than reset (see `Keychain.read()` legacy migration).
 - No Keychain or other blocking or prompting system calls at launch. Read the OpenRouter key only on a user action.
 - Tests never touch real user state: use a temp `MeetingLibrary` root and inject `AppState.readKey`.
@@ -30,17 +31,18 @@ These are part of every change, planned up front and reviewed like features:
 | `Sources/StatusBarController.swift` | Status item, popover, right-click `NSMenu`, animated icon |
 | `Sources/Core/` | `AppState` (single source of UI state), recording lifecycle, processing queue and analysis, models, persistence, Keychain |
 | `Sources/Recording/` | Mic (`AVAudioRecorder`), system audio (Core Audio process tap), level meter, playback, import |
-| `Sources/Services/` | `LocalEngine` (worker subprocess), `OpenRouter` (validate, catalog, analyze, title parsing) |
-| `Sources/Views/` | `Theme` (tokens), `LogoGlyph` (the logo), `Components` (shared controls), screens |
+| `Sources/Services/` | `LocalEngine` (worker subprocess, live follow mode, single-line redo), `OpenRouter` (validate, catalog, analyze, title parsing), `Updater` (GitHub Releases, verified install), `Notifier`, `GlobalHotKey` |
+| `Sources/Views/` | `Theme` (tokens), `LogoGlyph` (the logo), `Components` (shared controls), `TranscriptViews` (transcript lines, conversation map, hints), `SetupView` (first run), screens |
 | `Sources/Resources/worker.py` | Transcription pipeline (typed with basedpyright, linted with ruff) |
 | `scripts/build.sh` | Release build, bundle, sign; `scripts/icon/generate.sh` regenerates the app icon from `LogoGlyph.swift` |
+| `scripts/eval/eval.py` | Recognition regression set (synthetic EN/FR/AR meeting with known text), scorer, and a real-time replay to test live mode |
 
 ## Commands (run what you touch, once, and read the output)
 
 ```sh
-swift build && swift test                              # 34+ tests must pass, none skipped
+swift build && swift test                              # 46+ tests must pass, none skipped
 basedpyright --project pyrightconfig.json              # worker types: 0 errors
-ruff check Sources/Resources/worker.py
+ruff check Sources/Resources/worker.py scripts/eval/eval.py
 bash scripts/build.sh                                  # signed .app in build/
 codesign --verify --deep --strict "build/Ultra Transcribe.app"
 ```
@@ -58,9 +60,9 @@ Quit the running app before rebuilding the copy it runs from, and check that no 
 
 ## Evidence before claims
 
-- **Recognition changes are measured on real audio,** never guessed. A/B on a real meeting copy in a temp dir; count wrong-language lines and inspect the mic track. Record results in `QA.md`.
-  - Proven: utterance segmentation at pauses, 70 Hz high-pass, mild spectral denoise, gain to −20 dBFS, allowed-language logits constraint (plus "None" for no speech), filler/sound-event filter, mic-echo dedupe.
-  - Rejected: a "Saudi Arabic" context hint (recited on silence, drifted Arabic to English); envelope-correlation bleed detection (never fired, dropped a real line).
+- **Recognition changes are measured on real audio,** never guessed. Run `scripts/eval/eval.py` (synthetic set with known text) and A/B on real meeting copies in a temp dir; compare lines, words and languages per side. Record results in `QA.md`.
+  - Proven: utterance segmentation at pauses, 70 Hz high-pass, mild spectral denoise, gain to −20 dBFS (up to +40 dB), allowed-language logits constraint (plus "None" for no speech), filler/sound-event filter, mic-echo dedupe, speech detection relative to each track's own noise floor and loudest speech (no fixed loudness bar), quiet stretches as short clips of their own, re-decoding an unsure "None" as the likeliest language, re-decoding answers that recite the Names and terms prompt without it.
+  - Rejected: a "Saudi Arabic" context hint (recited on silence, drifted Arabic to English); envelope-correlation bleed detection (never fired, dropped a real line); comparing text confidence across languages; a head start for the speaker's previous language; one 4 dB margin for all speech; splitting regions by their own loudest speech.
 - **Performance claims come from benchmarks.** RAM per model is measured via `proc_pid_rusage` phys_footprint (Activity Monitor "Memory"); numbers live in `ASRModel.memoryGB`/`speed`.
 - **UI is verified by using the built app,** with screenshots of the real surfaces. Report anything not seen on screen as unverified.
 - **Say what failed.** If a gate fails or you couldn't run it, write that down plainly.

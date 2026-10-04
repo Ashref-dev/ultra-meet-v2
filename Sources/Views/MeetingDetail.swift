@@ -10,6 +10,7 @@ struct MeetingDetail: View {
     @State private var copied = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var isActive: Bool { meeting.id == state.activeID }
+    var isLive: Bool { meeting.id == state.liveID }
     var isTranscribing: Bool { meeting.id == state.processingID || meeting.id == state.pendingID || state.queued.contains(meeting.id) }
     var isAnalyzing: Bool { meeting.id == state.analyzingID }
     static let tabs = [TabItem(id: "Transcript", symbol: "waveform"), TabItem(id: "AI notes", symbol: "sparkles"), TabItem(id: "My notes", symbol: "pencil")]
@@ -84,11 +85,15 @@ struct MeetingDetail: View {
     var actions: some View {
         Menu {
             Button("Analyze with AI") { tab = "AI notes"; state.analyze(meeting.id) }.disabled(meeting.segments.isEmpty || state.analyzingID != nil)
-            Button("Transcribe Again") { state.transcribe(meeting.id) }.disabled(isActive || isTranscribing || meeting.audioDeleted)
+            Button("Transcribe Again") { state.transcribe(meeting.id) }.disabled(isActive || isTranscribing || isLive || meeting.audioDeleted)
             Divider()
-            ForEach(audioFiles, id: \.self) { url in
-                Button("Play \(label(for: url))") { play(url) }
-            }.disabled(isActive)
+            Group {
+                Button("Play Meeting") { play(audioFiles) }
+                if audioFiles.count > 1 {
+                    ForEach(audioFiles, id: \.self) { url in Button("Play \(label(for: url)) Only") { play([url]) } }
+                }
+            }
+            .disabled(isActive || audioFiles.isEmpty)
             Button("Show in Finder") { NSWorkspace.shared.open(state.library.folder(meeting.id)) }
             Divider()
             Button("Delete Audio…", role: .destructive) { deleteAudioConfirmation = true }.disabled(isActive || isTranscribing || meeting.audioDeleted)
@@ -122,19 +127,70 @@ struct MeetingDetail: View {
             transcript
         }
     }
+    /// Lines as the worker finishes them: during a live recording, and while a transcription runs.
+    var inProgress: [TranscriptSegment] {
+        isLive || meeting.id == state.processingID ? state.engine.partial : []
+    }
     @ViewBuilder var transcript: some View {
         if !meeting.segments.isEmpty {
+            saved
+        } else if !inProgress.isEmpty {
+            progressing
+        } else {
+            placeholder
+        }
+    }
+    var saved: some View {
+        ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 22) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        ConversationMap(segments: meeting.segments, duration: meeting.duration, position: playback.duration > 0 ? playback.position : nil, seek: canSeek ? { play(audioFiles, at: $0) } : nil)
+                        TalkTimeLabels(meeting: meeting)
+                    }
+                    .frame(maxWidth: Theme.readingWidth + 84, alignment: .leading)
+                    if let suggestion = state.termSuggestion, suggestion.meetingID == meeting.id {
+                        InlineHint(symbol: "text.badge.plus", text: "Add \(suggestion.terms.map { "“\($0)”" }.formatted(.list(type: .and))) to Names and terms, so it’s recognized next time?",
+                                   action: ("Add", { state.addTerms(suggestion.terms) }), dismiss: { state.termSuggestion = nil })
+                            .frame(maxWidth: Theme.readingWidth + 84)
+                            .transition(.opacity)
+                    }
                     ForEach(SpeakerBlock.group(meeting.segments)) { block in
-                        SpeakerBlockView(block: block, canSeek: !meeting.audioDeleted && !isActive) { seek($0) }
+                        SpeakerBlockView(block: block, playingID: playingLine?.id, redoingID: state.redoingLineID, showLanguage: meeting.languages.count > 1, actions: lineActions)
                     }
                 }
                 .padding(.horizontal, 32).padding(.vertical, 24)
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .animation(reduceMotion ? nil : Theme.feedback, value: state.termSuggestion)
             }
-        } else {
-            placeholder
+            .onChange(of: playingBlock) { _, block in
+                guard let block, playback.playing else { return }
+                withAnimation(reduceMotion ? nil : Theme.selection) { proxy.scrollTo(block, anchor: .center) }
+            }
+        }
+    }
+    var progressing: some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                VStack(alignment: .leading, spacing: 22) {
+                    HStack(spacing: 10) {
+                        if isLive {
+                            Circle().fill(Theme.orange).frame(width: 6, height: 6)
+                            MonoLabel("Live transcript · lines appear as people finish sentences", color: Theme.orange)
+                        } else {
+                            DotProgress(value: state.engine.fraction, dots: 24).frame(width: 120, height: 5)
+                            MonoLabel(state.engine.message)
+                            Spacer()
+                            Button("Cancel") { state.cancelProcessing() }.buttonStyle(ControlStyle(kind: .quiet, compact: true))
+                        }
+                    }
+                    ForEach(SpeakerBlock.group(inProgress)) { SpeakerBlockView(block: $0, showLanguage: Set(inProgress.compactMap(\.language)).count > 1) }
+                    Color.clear.frame(height: 1).id("end")
+                }
+                .padding(.horizontal, 32).padding(.vertical, 24)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .onChange(of: inProgress.count) { _, _ in withAnimation(reduceMotion ? nil : Theme.selection) { proxy.scrollTo("end", anchor: .bottom) } }
         }
     }
     var placeholder: some View {
@@ -145,7 +201,7 @@ struct MeetingDetail: View {
                 Button("Cancel") { state.cancelProcessing() }.buttonStyle(ControlStyle(kind: .quiet, compact: true))
             } else if isActive {
                 Text("Listening.").font(.system(size: 18, weight: .medium))
-                Text("Your transcript appears when you stop.").font(.system(size: 13)).foregroundStyle(Theme.secondary)
+                Text(isLive ? "Lines appear here as people finish sentences." : "Your transcript appears when you stop.").font(.system(size: 13)).foregroundStyle(Theme.secondary)
             } else {
                 Text(meeting.status == .ready ? "No speech was detected." : "No transcript yet.").font(.system(size: 18, weight: .medium))
                 if !meeting.audioDeleted {
@@ -155,19 +211,39 @@ struct MeetingDetail: View {
         }
         .padding(28).frame(maxWidth: .infinity, maxHeight: .infinity)
     }
+    var canSeek: Bool { !meeting.audioDeleted && !isActive && !audioFiles.isEmpty }
+    var lineActions: LineActions {
+        LineActions(
+            canSeek: canSeek,
+            canRedo: !meeting.audioDeleted && !isActive && !isTranscribing && state.redoingLineID == nil && !state.engine.busy,
+            languages: state.preferences.languages.isEmpty ? ["English", "Arabic", "French"] : state.preferences.languages,
+            seek: { play(audioFiles, at: $0.start) },
+            redo: { state.retranscribe(meeting.id, line: $0, as: $1) },
+            edit: { state.editLine(meeting.id, line: $0.id, text: $1) })
+    }
+    /// The line being heard right now, highlighted and kept in view while the meeting plays.
+    var playingLine: TranscriptSegment? {
+        guard playback.duration > 0 else { return nil }
+        return meeting.segments.last { playback.sources.contains($0.source) && $0.start <= playback.position + 0.15 && playback.position < $0.end + 0.6 }
+    }
+    var playingBlock: UUID? {
+        guard let line = playingLine else { return nil }
+        return SpeakerBlock.group(meeting.segments).first { $0.segments.contains { $0.id == line.id } }?.id
+    }
     var player: some View {
         HStack(spacing: 12) {
             Button { playback.togglePause() } label: { Image(systemName: playback.playing ? "pause.fill" : "play.fill").contentTransition(.symbolEffect(.replace)) }
                 .buttonStyle(.plain).accessibilityLabel(playback.playing ? "Pause playback" : "Resume playback")
-            MonoLabel(playbackTitle)
+            MonoLabel(playback.sources.map { $0 == "microphone" ? "You" : $0 == "system" ? "Colleagues" : "Recording" }.joined(separator: " + "))
             Text(Meeting.timestamp(playback.position)).font(Theme.mono).monospacedDigit()
             Slider(value: Binding(get: { playback.position }, set: { playback.seek($0) }), in: 0...max(1, playback.duration)).tint(Theme.orange).controlSize(.small).accessibilityLabel("Playback position")
             Text(Meeting.timestamp(playback.duration)).font(Theme.mono).foregroundStyle(Theme.secondary)
+            Button { playback.cycleRate() } label: { Text("\(playback.rate.formatted(.number.precision(.fractionLength(0...2))))×").monospacedDigit() }
+                .buttonStyle(ControlStyle(kind: .quiet, compact: true)).help("Playback speed").accessibilityLabel("Playback speed")
             Button { playback.stop() } label: { Image(systemName: "xmark") }.buttonStyle(.plain).foregroundStyle(Theme.secondary).accessibilityLabel("Stop playback")
         }
         .padding(.horizontal, 32).padding(.vertical, 12).background(Theme.background)
     }
-    @State private var playbackTitle = ""
 
     // MARK: Audio
 
@@ -183,11 +259,14 @@ struct MeetingDetail: View {
         default: return "Recording"
         }
     }
-    func seek(_ segment: TranscriptSegment) {
-        if let audio = audioFiles.first(where: { $0.deletingPathExtension().lastPathComponent == segment.source }) { play(audio, at: segment.start) }
-    }
-    func play(_ url: URL, at seconds: Double = 0) {
-        do { try playback.play(url, at: seconds); playbackTitle = label(for: url) }
+    func play(_ urls: [URL], at seconds: Double = 0) {
+        guard !urls.isEmpty else { return }
+        if Set(playback.sources) == Set(urls.map { $0.deletingPathExtension().lastPathComponent }) && playback.duration > 0 {
+            playback.seek(seconds)
+            if !playback.playing { playback.togglePause() }
+            return
+        }
+        do { try playback.play(urls, at: seconds) }
         catch { state.error = "This recording could not be played: \(error.localizedDescription)" }
     }
     func copyContent() {
@@ -223,7 +302,7 @@ struct AnalysisView: View {
                     TemplatePicker(state: state)
                     analyzeButton
                 }.padding(.top, 4)
-                MonoLabel("Sends the transcript text to OpenRouter · never audio")
+                MonoLabel("Sends the transcript and your notes as text to OpenRouter · never audio")
             }
             .padding(28).frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {

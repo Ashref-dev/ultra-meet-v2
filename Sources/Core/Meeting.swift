@@ -74,6 +74,8 @@ struct TranscriptSegment: Codable, Identifiable, Equatable {
     var text: String
     var source: String
     var language: String?
+    /// How sure the recognizer was of the words, 0 to 1. Missing for transcripts made before 0.6.
+    var confidence: Double?
     /// Microphone audio is the person recording; Mac audio is everyone else on the call.
     var speaker: String {
         switch source {
@@ -82,6 +84,13 @@ struct TranscriptSegment: Codable, Identifiable, Equatable {
         default: return "Speaker"
         }
     }
+    /// Lines the recognizer read with low confidence are marked so people check them, and the AI treats them with care.
+    var isUncertain: Bool { (confidence ?? 1) < 0.6 }
+    var languageCode: String? {
+        guard let language else { return nil }
+        return ["English": "EN", "Arabic": "AR", "French": "FR", "Spanish": "ES", "German": "DE", "Italian": "IT", "Portuguese": "PT", "Turkish": "TR", "Chinese": "ZH", "Cantonese": "YUE", "Japanese": "JA", "Korean": "KO", "Persian": "FA", "Hindi": "HI"][language] ?? String(language.prefix(2)).uppercased()
+    }
+    var duration: Double { max(0, end - start) }
     var isRightToLeft: Bool {
         if let language, ["Arabic", "Hebrew", "Persian", "Urdu"].contains(language) { return true }
         return text.unicodeScalars.first { $0.properties.isAlphabetic }.map { (0x0590...0x08FF).contains($0.value) } ?? false
@@ -125,6 +134,28 @@ struct Meeting: Codable, Identifiable {
         segments = replacement
     }
     var transcript: String { segments.map { "[\(Self.timestamp($0.start))] \($0.speaker): \($0.text)" }.joined(separator: "\n") }
+    /// Seconds spoken by each side, measured from the transcript so it matches what was said, not room noise.
+    var talkTime: (you: Double, colleagues: Double) {
+        segments.reduce(into: (you: 0.0, colleagues: 0.0)) { total, segment in
+            if segment.source == "system" { total.colleagues += segment.duration } else { total.you += segment.duration }
+        }
+    }
+    var languages: [String] {
+        segments.compactMap(\.language).reduce(into: [String]()) { if !$0.contains($1) { $0.append($1) } }
+    }
+    /// What AI analysis reads: who is who, how much each side spoke, then the transcript with unsure lines marked.
+    var analysisInput: String {
+        let time = talkTime
+        let total = max(1, time.you + time.colleagues)
+        var header = ["Recorded \(createdAt.formatted(date: .complete, time: .shortened)), \(Self.timestamp(duration)) long."]
+        if Set(segments.map(\.source)).count > 1 || segments.contains(where: { $0.source == "system" }) {
+            header.append("Talk time: You \(Self.timestamp(time.you)) (\(Int((time.you / total * 100).rounded()))%), Colleagues \(Self.timestamp(time.colleagues)) (\(Int((time.colleagues / total * 100).rounded()))%).")
+        }
+        if !languages.isEmpty { header.append("Languages heard: \(languages.joined(separator: ", ")).") }
+        if !notes.isEmpty { header.append("Notes the recorder typed during the meeting:\n\(notes)") }
+        let lines = segments.map { "[\(Self.timestamp($0.start))] \($0.speaker): \($0.text)\($0.isUncertain ? " [unclear]" : "")" }
+        return header.joined(separator: "\n") + "\n\nTranscript:\n" + lines.joined(separator: "\n")
+    }
     var shareableNotes: String {
         (notesStale == true ? "> These notes belong to an earlier transcription.\n\n" : "") + summary
     }
@@ -166,6 +197,14 @@ struct Preferences: Codable, Equatable {
     var openRouterModel = "google/gemini-2.5-flash"
     var templates = AnalysisTemplate.defaults
     var templateID: UUID?
+    /// Transcribe during the meeting, so the transcript is ready seconds after Stop.
+    var liveTranscription = true
+    /// Control-Option-Command-R starts or stops recording from any app.
+    var globalShortcut = true
+    var notifyWhenReady = true
+    var checkForUpdates = true
+    /// Becomes true once the first-run setup is finished or skipped.
+    var setupDone = false
 
     var template: AnalysisTemplate { templates.first { $0.id == templateID } ?? templates.first ?? AnalysisTemplate.defaults[0] }
     static let supportedLanguages = ["English", "Arabic", "French", "Spanish", "German", "Italian", "Portuguese", "Dutch", "Turkish", "Russian", "Hindi", "Persian", "Chinese", "Cantonese", "Japanese", "Korean", "Indonesian", "Malay", "Thai", "Vietnamese", "Filipino", "Swedish", "Danish", "Finnish", "Polish", "Czech", "Greek", "Romanian", "Hungarian", "Macedonian"]
@@ -186,5 +225,22 @@ struct Preferences: Codable, Equatable {
         openRouterModel = (try? values.decodeIfPresent(String.self, forKey: .openRouterModel)) ?? defaults.openRouterModel
         templates = (try? values.decodeIfPresent([AnalysisTemplate].self, forKey: .templates)).flatMap { $0.isEmpty ? nil : $0 } ?? defaults.templates
         templateID = try? values.decodeIfPresent(UUID.self, forKey: .templateID)
+        liveTranscription = (try? values.decodeIfPresent(Bool.self, forKey: .liveTranscription)) ?? defaults.liveTranscription
+        globalShortcut = (try? values.decodeIfPresent(Bool.self, forKey: .globalShortcut)) ?? defaults.globalShortcut
+        notifyWhenReady = (try? values.decodeIfPresent(Bool.self, forKey: .notifyWhenReady)) ?? defaults.notifyWhenReady
+        checkForUpdates = (try? values.decodeIfPresent(Bool.self, forKey: .checkForUpdates)) ?? defaults.checkForUpdates
+        setupDone = (try? values.decodeIfPresent(Bool.self, forKey: .setupDone)) ?? defaults.setupDone
+    }
+}
+
+extension String {
+    /// Text folded for search: case, accents, Arabic diacritics, hamza seats, tatweel, taa marbuta and alif maqsura
+    /// are ignored, so "أحمد" finds "احمد" and "resume" finds "résumé".
+    var searchFolded: String {
+        var folded = folding(options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive], locale: nil)
+        for (variant, plain) in [("أ", "ا"), ("إ", "ا"), ("آ", "ا"), ("ٱ", "ا"), ("ة", "ه"), ("ى", "ي"), ("ـ", "")] {
+            folded = folded.replacingOccurrences(of: variant, with: plain)
+        }
+        return folded
     }
 }

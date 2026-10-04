@@ -36,6 +36,7 @@ extension AppState {
                 }
             }
             if let recordingTimer { RunLoop.main.add(recordingTimer, forMode: .common) }
+            beginLiveTranscription(meeting.id)
         } catch is CancellationError {
             await recorder.stop()
             update(meeting.id) { $0.status = .failed; $0.captureError = "Recording setup did not finish."; $0.error = "Recording setup was cancelled." }
@@ -69,9 +70,24 @@ extension AppState {
             if let failure = $0.captureError { $0.error = "Recording is incomplete: \(failure). Retained audio is protected from automatic deletion." }
         }
         activeID = nil
-        guard processAfter && !preparingToQuit else { return }
+        let live = liveID == id
+        guard processAfter && !preparingToQuit else {
+            if live { engine.cancel() }
+            return
+        }
         selectedID = id
-        transcribe(id)
+        if live {
+            // The live transcription already has everything but the last moments; closing the files lets it finish.
+            processingID = id
+            update(id) { $0.status = .processing; $0.error = nil }
+            do { try engine.finish(folder: library.folder(id)) }
+            catch {
+                engine.cancel()
+                self.error = "The transcript couldn’t be finished: \(error.localizedDescription) The audio is saved; choose Transcribe Again."
+            }
+        } else {
+            transcribe(id)
+        }
         showMeeting(id)
     }
     func captureFailed(_ message: String, for recordingID: UUID? = nil) {

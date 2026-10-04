@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import UserNotifications
 
 @main
 struct UltraTranscribeApp: App {
@@ -12,11 +13,12 @@ struct UltraTranscribeApp: App {
 }
 
 @MainActor
-final class ApplicationDelegate: NSObject, NSApplicationDelegate {
+final class ApplicationDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
     let state: AppState
     private var statusBar: StatusBarController?
     private var library: NSWindow?
     private var settings: NSWindow?
+    private var setup: NSWindow?
     private var quitting = false
 
     override init() {
@@ -31,6 +33,7 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate {
         super.init()
         state.showMeeting = { [weak self] id in self?.showLibrary(selecting: id) }
         state.showSettings = { [weak self] pane in self?.showSettings(pane) }
+        state.showSetup = { [weak self] in self?.showSetup() }
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -40,7 +43,41 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate {
         statusBar = controller
         let event = NSAppleEventManager.shared().currentAppleEvent
         let launchedAtLogin = event?.eventID == kAEOpenApplication && event?.paramDescriptor(forKeyword: keyAEPropData)?.enumCodeValue == keyAELaunchedAsLogInItem
-        if !launchedAtLogin { DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { controller.showPanel() } }
+        if Notifier.available { UNUserNotificationCenter.current().delegate = self }
+        state.updater.onFound = { release in
+            let version = release.version?.description ?? release.tag
+            guard UserDefaults.standard.string(forKey: "notifiedVersion") != version else { return }
+            UserDefaults.standard.set(version, forKey: "notifiedVersion")
+            Notifier.post(id: "update-\(version)", title: "Ultra Transcribe \(version) is available", body: "Open Settings → Credits to install it.", info: ["update": version])
+        }
+        state.updater.scheduleChecks { [weak state] in state?.preferences.checkForUpdates ?? false }
+        if launchedAtLogin { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+            guard let self else { return }
+            if self.state.preferences.setupDone { controller.showPanel() } else { self.showSetup() }
+        }
+    }
+    func showSetup() {
+        statusBar?.closePanel()
+        setup?.close()
+        let window = makeWindow(title: "Welcome to Ultra Transcribe", size: NSSize(width: 580, height: 560), autosave: "Setup", root: SetupView(state: state) { [weak self] in
+            self?.setup?.close()
+            self?.statusBar?.showPanel()
+        })
+        window.styleMask.remove(.resizable)
+        setup = window
+        present(window)
+    }
+    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse, withCompletionHandler completionHandler: @escaping () -> Void) {
+        let meeting = (response.notification.request.content.userInfo["meeting"] as? String).flatMap(UUID.init(uuidString:))
+        let update = response.notification.request.content.userInfo["update"] != nil
+        Task { @MainActor in
+            if let meeting { self.showLibrary(selecting: meeting) } else if update { self.showSettings(.credits) }
+        }
+        completionHandler()
+    }
+    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification, withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
+        completionHandler([.banner, .sound])
     }
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool {

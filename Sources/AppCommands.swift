@@ -8,6 +8,7 @@ struct AppCommands: Commands {
     var body: some Commands {
         CommandGroup(replacing: .appSettings) {
             Button("Settings…") { delegate.showSettings(state.settingsPane) }.keyboardShortcut(",")
+            Button("Check for Updates…") { delegate.showSettings(.credits); Task { await state.updater.check() } }
         }
         CommandGroup(replacing: .newItem) {
             Button("Start Recording") { state.startRecording() }.keyboardShortcut("n").disabled(!state.canStart)

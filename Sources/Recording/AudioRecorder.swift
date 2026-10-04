@@ -9,6 +9,9 @@ final class LevelMeter: ObservableObject {
     @Published private(set) var history = Array(repeating: Sample(you: 0, colleagues: 0), count: LevelMeter.length)
     @Published private(set) var youSeconds: Double = 0
     @Published private(set) var colleaguesSeconds: Double = 0
+    /// Seconds of unbroken digital silence per side: a muted or wrong input, or a call playing elsewhere.
+    @Published private(set) var youSilence: Double = 0
+    @Published private(set) var colleaguesSilence: Double = 0
     var latest: Sample { history.last ?? Sample(you: 0, colleagues: 0) }
     var youShare: Double? {
         let total = youSeconds + colleaguesSeconds
@@ -16,16 +19,20 @@ final class LevelMeter: ObservableObject {
     }
     /// Maps -60…0 dBFS to 0…1 so quiet voices still register visibly.
     static func normalized(decibels: Float) -> Float { max(0, min(1, (decibels + 60) / 60)) }
-    func push(_ sample: Sample, interval: Double) {
+    func push(_ sample: Sample, interval: Double, silent: (you: Bool, colleagues: Bool) = (false, false)) {
         history.append(sample)
         history.removeFirst(history.count - Self.length)
         if sample.you > 0.33 { youSeconds += interval }
         if sample.colleagues > 0.33 { colleaguesSeconds += interval }
+        youSilence = silent.you ? youSilence + interval : 0
+        colleaguesSilence = silent.colleagues ? colleaguesSilence + interval : 0
     }
     func reset() {
         history = Array(repeating: Sample(you: 0, colleagues: 0), count: Self.length)
         youSeconds = 0
         colleaguesSeconds = 0
+        youSilence = 0
+        colleaguesSilence = 0
     }
 }
 
@@ -80,9 +87,10 @@ final class AudioRecorder: NSObject, ObservableObject, AVAudioRecorderDelegate {
                 Task { @MainActor in
                     guard let self, !self.paused else { return }
                     self.microphone?.updateMeters()
-                    let you = self.microphone.map { LevelMeter.normalized(decibels: $0.averagePower(forChannel: 0)) } ?? 0
+                    let power = self.microphone?.averagePower(forChannel: 0) ?? 0
+                    let you = self.microphone == nil ? 0 : LevelMeter.normalized(decibels: power)
                     let colleagues = LevelMeter.normalized(decibels: 20 * log10(max(self.systemLevel, 0.000_001)))
-                    self.levels.push(.init(you: you, colleagues: colleagues), interval: 0.08)
+                    self.levels.push(.init(you: you, colleagues: colleagues), interval: 0.08, silent: (self.microphone != nil && power <= -100, self.systemAudio != nil && self.systemLevel < 0.000_01))
                 }
             }
             if let meter { RunLoop.main.add(meter, forMode: .common) }

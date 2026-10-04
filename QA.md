@@ -2,6 +2,38 @@
 
 What was verified for the current release, and how. Update this file with every release; say plainly what was not verified.
 
+## 0.6.0
+
+Environment: Apple Silicon, 24 GB memory. App built with `scripts/build.sh`, signed with Apple Development. This release was verified in code, with automated tests and with the transcription worker on real and synthetic audio. The new interface was not driven by automation: it is listed under "Not verified" until checked by hand.
+
+### Automated
+
+- `swift test`: 46 tests pass, none skipped. New tests cover semantic version ordering, choosing the newest GitHub release (drafts skipped), refusing an unsigned update, talk time and the AI input (speaker split, languages, typed notes, unclear lines), Arabic and accent search folding, decoding 0.5 files with the new fields, name suggestions from corrections, editing a line, stopping a live recording (finishes instead of transcribing twice), silence tracking per side, swapping app copies on update (no staged copy left), and keeping a meeting protected while its live transcription runs.
+- `basedpyright`: 0 errors. `ruff`: clean (worker and `scripts/eval/eval.py`).
+- The streaming reader and resampler return sample-identical audio to `soundfile` for the recorder's WAV (Int16) and CAF (Float32) files, read at once or in random chunks.
+
+### Recognition
+
+Synthetic set (`scripts/eval/eval.py`): 13 lines of English, French and Arabic from macOS voices, You at -45 to -57 dBFS including the Whisper voice, room noise at -72 dBFS, colleagues leaking into the microphone at -40 dB.
+
+| Worker | Mean character error | Missed lines | Wrong language | Lines nobody said |
+|---|---|---|---|---|
+| 0.5.0 | 0.133 | 1 ("Oui.") | 0 | 1 (echo of an Arabic line) |
+| 0.6.0 | 0.047 | 0 | 0 | 0 |
+
+Real meetings (five, 0.5 to 12 minutes, English and Arabic with French): 0.6.0 keeps every line 0.5.0 found except two filler sounds and one hallucinated line of 255 question marks, and adds about ten real lines (for example a quiet "نعم" from the microphone and "How many days?" from the call). A colleague's 9-second English line, which the model had replaced with a recitation of the Names and terms list, is now decoded again without the list. Transcription time was unchanged within a few seconds.
+
+Measured and rejected: a single loudness margin of 4 dB (merged room noise and a short reply into one 26-second clip the model called silence), splitting by each region's own loudest speech (cut the call track into 193 fragments), predicting speaker bleed from the call track (bleed sat at the microphone's noise floor), comparing text confidence across languages (forcing English on clear Arabic still scores higher) and favoring the speaker's previous language (mislabeled two short replies in real meetings).
+
+Live transcription: the synthetic meeting was rewritten in real time as growing files while the worker followed it. Lines appeared during the replay; the final transcript was ready about 4 seconds after the files closed and scored the same as offline. A worker whose parent exits finishes the transcript and quits. After a code review, live mode tracks which audio it has transcribed instead of a single position, so speech that only becomes detectable as the noise floor settles is still transcribed; the replay scored the same afterwards (0.047, nothing missed).
+
+### Not verified
+
+- Every new interface surface on screen: setup window, live lines in the panel and meeting window, health hints, conversation map, line menu and in-place editing, two-track playback and speed, update states in Credits, update banner and menu item, two-tone waveform, menu-bar progress fill.
+- The global shortcut, notifications (permission prompt, click to open), and installing an update end to end (needs a newer signed release on GitHub).
+- Live transcription with a real recording and microphone; only replayed files were tested.
+- Typing into the panel note field by automation; Voice Isolation's effect on accuracy; notarized distribution.
+
 ## 0.5.0
 
 Environment: Apple Silicon, 24 GB memory, macOS 27. App built with `scripts/build.sh`, signed with Apple Development, `codesign --verify --deep --strict` passing.

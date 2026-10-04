@@ -5,9 +5,18 @@ struct LibraryView: View {
     @ObservedObject var state: AppState
     @State private var deleteID: UUID?
     @AppStorage("sidebarCollapsed") private var collapsed = false
+    /// Search ignores case, accents and Arabic spelling variants (see `searchFolded`).
+    var query: String { state.search.trimmingCharacters(in: .whitespaces).searchFolded }
     var filtered: [Meeting] {
-        let query = state.search.trimmingCharacters(in: .whitespaces)
-        return state.meetings.filter { query.isEmpty || $0.title.localizedCaseInsensitiveContains(query) || $0.transcript.localizedCaseInsensitiveContains(query) || $0.summary.localizedCaseInsensitiveContains(query) || $0.notes.localizedCaseInsensitiveContains(query) }
+        guard !query.isEmpty else { return state.meetings }
+        return state.meetings.filter { meeting in
+            [meeting.title, meeting.summary, meeting.notes].contains { $0.searchFolded.contains(query) } || meeting.segments.contains { $0.text.searchFolded.contains(query) }
+        }
+    }
+    /// The first transcript line that matches, shown under the meeting so results explain themselves.
+    func snippet(_ meeting: Meeting) -> TranscriptSegment? {
+        guard !query.isEmpty, !meeting.title.searchFolded.contains(query) else { return nil }
+        return meeting.segments.first { $0.text.searchFolded.contains(query) }
     }
     var body: some View {
         HStack(spacing: 0) {
@@ -83,7 +92,18 @@ struct LibraryView: View {
                 LazyVStack(spacing: 2) {
                     ForEach(filtered) { meeting in
                         Button { state.selectedID = meeting.id } label: {
-                            MeetingRow(state: state, meeting: meeting).padding(.horizontal, 10).padding(.vertical, 9)
+                            VStack(alignment: .leading, spacing: 6) {
+                                MeetingRow(state: state, meeting: meeting)
+                                if let line = snippet(meeting) {
+                                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                                        Circle().fill(Theme.speakerColor(line.source)).frame(width: 5, height: 5)
+                                        Text(line.text).font(.system(size: 11.5)).foregroundStyle(Theme.secondary).lineLimit(2)
+                                            .multilineTextAlignment(line.isRightToLeft ? .trailing : .leading)
+                                            .frame(maxWidth: .infinity, alignment: line.isRightToLeft ? .trailing : .leading)
+                                    }
+                                }
+                            }
+                            .padding(.horizontal, 10).padding(.vertical, 9)
                         }
                         .buttonStyle(RowStyle(selected: meeting.id == state.selectedID))
                         .accessibilityAddTraits(meeting.id == state.selectedID ? .isSelected : [])

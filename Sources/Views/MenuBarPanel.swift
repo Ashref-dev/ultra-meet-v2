@@ -19,6 +19,10 @@ struct MenuBarPanel: View {
             .padding(.horizontal, 10)
             .transition(.opacity.combined(with: .scale(scale: 0.98)))
             if let error = state.error { banner(error).padding(.horizontal, 10).padding(.top, 8) }
+            if let release = state.updater.available, !recording {
+                InlineHint(symbol: "arrow.down.circle", text: "Ultra Transcribe \(release.version?.description ?? release.tag) is available.", action: ("Update", { state.showSettings(.credits) }))
+                    .padding(.horizontal, 10).padding(.top, 8)
+            }
             DotWaveform(meter: state.recorder.levels, live: recording, paused: state.recorder.paused)
                 .frame(height: 66)
                 .padding(.horizontal, 6)
@@ -135,6 +139,8 @@ private struct LiveCard: View {
             }
             MonoLabel("Started \(meeting.createdAt.formatted(.dateTime.hour().minute())) · \(meeting.createdAt.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated)))")
             TalkShare(meter: state.recorder.levels, source: meeting.source)
+            HealthHints(meter: state.recorder.levels, source: meeting.source)
+            if state.liveID == meeting.id { LiveLines(lines: state.engine.partial) }
             NoteEditor(text: Binding(get: { meeting.notes }, set: { value in state.update(meeting.id) { $0.notes = value } }), placeholder: "Jot a note…")
                 .frame(height: 96)
         }
@@ -185,6 +191,46 @@ private struct TalkShare: View {
             }
         }
         .accessibilityElement(children: .combine)
+    }
+}
+
+/// The last lines of the live transcript, newest at the bottom.
+private struct LiveLines: View {
+    let lines: [TranscriptSegment]
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            MonoLabel("Live transcript", color: Theme.secondary.opacity(0.8))
+            if lines.isEmpty {
+                Text("Lines appear as people finish sentences.").font(.system(size: 12)).foregroundStyle(Theme.secondary)
+            }
+            ForEach(lines.suffix(3)) { line in
+                HStack(alignment: .firstTextBaseline, spacing: 7) {
+                    Circle().fill(Theme.speakerColor(line.source)).frame(width: 6, height: 6).accessibilityLabel(line.speaker)
+                    Text(line.text).font(.system(size: 12)).lineLimit(2)
+                        .foregroundStyle(line.isUncertain ? Theme.secondary : Color.primary)
+                        .multilineTextAlignment(line.isRightToLeft ? .trailing : .leading)
+                        .frame(maxWidth: .infinity, alignment: line.isRightToLeft ? .trailing : .leading)
+                }
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .animation(Theme.selection, value: lines.count)
+    }
+}
+
+/// Warnings that catch a muted microphone or a call playing on another device while there is time to fix it.
+private struct HealthHints: View {
+    @ObservedObject var meter: LevelMeter
+    let source: AudioSource
+    var body: some View {
+        if source.usesMicrophone && meter.youSilence >= 10 {
+            InlineHint(symbol: "mic.slash", text: "Your microphone isn’t picking up any sound.", action: ("Sound…", { openSound() }))
+        } else if source.usesSystemAudio && meter.colleaguesSilence >= 60 {
+            InlineHint(symbol: "speaker.slash", text: "No sound from your Mac for a minute. If you’re on a call, check that it plays on this Mac.")
+        }
+    }
+    func openSound() {
+        if let url = URL(string: "x-apple.systempreferences:com.apple.Sound-Settings.extension") { NSWorkspace.shared.open(url) }
     }
 }
 

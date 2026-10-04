@@ -36,6 +36,10 @@ final class AppState: ObservableObject {
     @Published var selectedID: UUID?
     @Published var activeID: UUID?
     @Published var processingID: UUID?
+    /// The recording being transcribed while it records.
+    @Published var liveID: UUID?
+    @Published var redoingLineID: UUID?
+    @Published var termSuggestion: TermSuggestion?
     @Published var pendingID: UUID?
     @Published var analyzingID: UUID?
     @Published var analysisFailure: AnalysisFailure?
@@ -50,6 +54,8 @@ final class AppState: ObservableObject {
     let library: MeetingLibrary
     let recorder = AudioRecorder()
     let engine: LocalEngine
+    let updater = Updater()
+    private var hotKey: GlobalHotKey?
     var recordingTimer: Timer?
     var startupTask: Task<Void, Never>?
     var operationTask: Task<Void, Never>?
@@ -60,13 +66,14 @@ final class AppState: ObservableObject {
     /// Window routing, provided by the application delegate.
     var showMeeting: (UUID?) -> Void = { _ in }
     var showSettings: (SettingsPane) -> Void = { _ in }
+    var showSetup: () -> Void = {}
     private var subscriptions = Set<AnyCancellable>()
     private var retentionTimer: Timer?
     var active: Meeting? { meetings.first { $0.id == activeID } }
     var selected: Meeting? { meetings.first { $0.id == selectedID } }
     var isWorking: Bool { processingID != nil || engine.busy || !queued.isEmpty }
     var canStart: Bool { activeID == nil && !starting && startupTask == nil && !preparingToQuit }
-    func isProtected(_ id: UUID) -> Bool { id == activeID || id == processingID || id == pendingID || queued.contains(id) }
+    func isProtected(_ id: UUID) -> Bool { id == activeID || id == processingID || id == liveID || id == pendingID || queued.contains(id) }
 
     init(root: URL? = nil) throws {
         library = try MeetingLibrary(root: root)
@@ -82,6 +89,7 @@ final class AppState: ObservableObject {
         selectedID = meetings.first?.id
         recorder.objectWillChange.sink { [weak self] in self?.objectWillChange.send() }.store(in: &subscriptions)
         engine.objectWillChange.sink { [weak self] in self?.objectWillChange.send() }.store(in: &subscriptions)
+        updater.objectWillChange.sink { [weak self] in self?.objectWillChange.send() }.store(in: &subscriptions)
         recorder.onError = { [weak self] message in self?.captureFailed(message) }
         try applyRetention()
         retentionTimer = Timer(timeInterval: 3600, repeats: true) { [weak self] _ in
@@ -106,12 +114,23 @@ final class AppState: ObservableObject {
         do {
             try library.savePreferences(preferences)
             try applyRetention()
-            switch preferences.appearance {
-            case "light": NSApp.appearance = NSAppearance(named: .aqua)
-            case "dark": NSApp.appearance = NSAppearance(named: .darkAqua)
-            default: NSApp.appearance = nil
+            if let app = NSApp {
+                app.appearance = preferences.appearance == "light" ? NSAppearance(named: .aqua) : preferences.appearance == "dark" ? NSAppearance(named: .darkAqua) : nil
             }
+            applyGlobalShortcut()
         } catch { self.error = error.localizedDescription }
+    }
+    /// Control-Option-Command-R toggles recording from any app. Registered only in the running app, never in tests.
+    func applyGlobalShortcut() {
+        guard Notifier.available else { return }
+        if preferences.globalShortcut, hotKey == nil {
+            hotKey = GlobalHotKey { [weak self] in
+                guard let self else { return }
+                if self.activeID != nil { self.stopRecording() } else { self.startRecording() }
+            }
+        } else if !preferences.globalShortcut {
+            hotKey = nil
+        }
     }
     func saveOpenRouterKey(_ key: String) throws {
         try Keychain.save(key)

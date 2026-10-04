@@ -7,6 +7,9 @@ enum Theme {
     /// Speakers: you (microphone) are green, colleagues (Mac audio) are orange.
     static let you = adaptive(light: NSColor(red: 0.10, green: 0.56, blue: 0.36, alpha: 1), dark: NSColor(red: 0.33, green: 0.78, blue: 0.53, alpha: 1))
     static let colleagues = adaptive(light: NSColor(red: 0.91, green: 0.45, blue: 0.07, alpha: 1), dark: NSColor(red: 0.98, green: 0.60, blue: 0.24, alpha: 1))
+    /// Deep tones for the center of the dot waveform; it fades to the speaker color at the edges, as in the reference.
+    static let youDeep = adaptive(light: NSColor(red: 0.03, green: 0.34, blue: 0.21, alpha: 1), dark: NSColor(red: 0.12, green: 0.55, blue: 0.34, alpha: 1))
+    static let colleaguesDeep = adaptive(light: NSColor(red: 0.70, green: 0.15, blue: 0.09, alpha: 1), dark: NSColor(red: 0.86, green: 0.29, blue: 0.16, alpha: 1))
     static let readingWidth: CGFloat = 640
     static let radius: CGFloat = 8
     static let controlRadius: CGFloat = 6
@@ -24,6 +27,10 @@ enum Theme {
         case "system": return colleagues
         default: return secondary
         }
+    }
+    /// Deep and light shade of a speaker, for two-tone gradients.
+    static func shades(_ source: String) -> (deep: Color, light: Color) {
+        source == "microphone" ? (youDeep, you) : (colleaguesDeep, colleagues)
     }
     private static func adaptive(light: NSColor, dark: NSColor) -> Color {
         Color(nsColor: NSColor(name: nil, dynamicProvider: { appearance in appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? dark : light }))
