@@ -2,7 +2,7 @@ import AVFoundation
 import CoreAudio
 
 final class SystemAudioTap: @unchecked Sendable {
-    private let queue = DispatchQueue(label: "tn.ashref.ultratranscribe.system-audio", qos: .userInitiated)
+    private let queue = DispatchQueue(label: "tn.achraf.ultratranscribe.system-audio", qos: .userInitiated)
     private var tap: AudioObjectID = 0
     private var aggregate: AudioObjectID = 0
     private var ioProc: AudioDeviceIOProcID?

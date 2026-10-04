@@ -9,50 +9,47 @@ struct AnalysisSettings: View {
     @State private var choosingModel = false
     @State private var editing: AnalysisTemplate?
     var body: some View {
-        Form {
-            Section {
+        VStack(alignment: .leading, spacing: 0) {
+            SettingsSection(title: "OpenRouter key", footer: "Stored in your macOS Keychain. Only the transcript text is sent, and only when you click Analyze with AI.") {
                 HStack(spacing: 8) {
-                    SecureField("API key", text: $key, prompt: Text("sk-or-v1-…"))
+                    Image(systemName: "key").font(.system(size: 11)).foregroundStyle(Theme.secondary)
+                    SecureField("", text: $key, prompt: Text("sk-or-v1-…"))
+                        .textFieldStyle(.plain).font(.system(size: 13, design: .monospaced))
                         .onChange(of: key) { _, _ in if status != .checking { status = .idle } }
                         .onSubmit(validate)
-                    Button(status == .checking ? "Checking…" : "Validate & Save", action: validate)
+                    Button(status == .checking ? "Checking" : "Validate & Save", action: validate)
                         .buttonStyle(ControlStyle(kind: .primary, compact: true))
                         .disabled(key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || status == .checking)
                 }
-                keyStatus
-            } header: { Text("OpenRouter") } footer: {
-                HStack(spacing: 4) {
-                    Text("Stored in your macOS Keychain.").font(.caption).foregroundStyle(Theme.secondary)
-                    Link("Get a key", destination: URL(string: "https://openrouter.ai/settings/keys")!).font(.caption)
+                .padding(.horizontal, 14).frame(height: 46)
+                RowDivider()
+                HStack(spacing: 8) {
+                    keyStatus
+                    Spacer()
+                    Link(destination: URL(string: "https://openrouter.ai/settings/keys")!) {
+                        HStack(spacing: 4) { Text("Get a key"); Image(systemName: "arrow.up.right").font(.system(size: 8.5, weight: .bold)) }
+                    }
+                    .buttonStyle(ControlStyle(kind: .quiet, compact: true))
+                }
+                .padding(.horizontal, 14).frame(height: 40)
+            }
+            SettingsSection(title: "Model", footer: "Prices and data policies are the provider’s. Larger models write better notes; fast ones answer in seconds.") {
+                SettingsRow(title: state.preferences.openRouterModel.components(separatedBy: "/").last ?? state.preferences.openRouterModel, detail: state.preferences.openRouterModel) {
+                    Button("Change…") { choosingModel = true }.buttonStyle(ControlStyle(compact: true))
                 }
             }
-            Section {
-                LabeledContent("Model") {
-                    Button { choosingModel = true } label: {
-                        HStack(spacing: 6) { Text(state.preferences.openRouterModel).font(.system(size: 12, design: .monospaced)); Image(systemName: "chevron.up.chevron.down").font(.system(size: 9)) }
-                    }.buttonStyle(ControlStyle(compact: true))
+            SettingsSection(title: "Templates", footer: "A template is the system prompt for a kind of meeting. Every analysis also gets a title, summary, decisions and action items for you and your colleagues.") {
+                ForEach(Array(state.preferences.templates.enumerated()), id: \.element.id) { index, template in
+                    if index > 0 { RowDivider() }
+                    templateRow(template)
                 }
-            } footer: { caption("Only the transcript text is sent, and only when you click Analyze with AI. Provider pricing and data policies apply.") }
-            Section {
-                ForEach(state.preferences.templates) { template in
-                    HStack(spacing: 10) {
-                        Button { state.preferences.templateID = template.id } label: {
-                            Image(systemName: template.id == state.preferences.template.id ? "largecircle.fill.circle" : "circle")
-                                .foregroundStyle(template.id == state.preferences.template.id ? Theme.orange : Theme.secondary)
-                        }.buttonStyle(.plain).accessibilityLabel("Use \(template.name)")
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(template.name)
-                            Text(template.prompt).font(.caption).foregroundStyle(Theme.secondary).lineLimit(1)
-                        }
-                        Spacer()
-                        Button("Edit") { editing = template }.buttonStyle(ControlStyle(kind: .quiet, compact: true))
-                    }
+                RowDivider()
+                HStack {
+                    Button { editing = AnalysisTemplate(name: "", prompt: "") } label: { Label("New template", systemImage: "plus") }
+                        .buttonStyle(ControlStyle(kind: .quiet, compact: true))
+                    Spacer()
                 }
-                Button { editing = AnalysisTemplate(name: "", prompt: "") } label: {
-                    Label("New Template", systemImage: "plus")
-                }.buttonStyle(ControlStyle(compact: true))
-            } header: { Text("Templates") } footer: {
-                caption("A template tells the AI what matters in this kind of meeting. Every analysis includes a title, summary, decisions, and action items for you and your colleagues.")
+                .padding(.horizontal, 8).frame(height: 40)
             }
         }
         .onAppear {
@@ -62,17 +59,40 @@ struct AnalysisSettings: View {
         .sheet(isPresented: $choosingModel) { ModelCatalog(selection: $state.preferences.openRouterModel) }
         .sheet(item: $editing) { template in TemplateEditor(state: state, template: template) }
     }
+    func templateRow(_ template: AnalysisTemplate) -> some View {
+        let selected = template.id == state.preferences.template.id
+        return HStack(spacing: 12) {
+            Button { withAnimation(Theme.feedback) { state.preferences.templateID = template.id } } label: {
+                HStack(spacing: 12) {
+                    ZStack {
+                        Circle().strokeBorder(selected ? Theme.orange : Theme.secondary.opacity(0.4), lineWidth: 1.5).frame(width: 16, height: 16)
+                        if selected { Circle().fill(Theme.orange).frame(width: 8, height: 8).transition(.scale) }
+                    }
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(template.name).font(.system(size: 13, weight: selected ? .semibold : .regular))
+                        Text(template.prompt).font(.system(size: 11.5)).foregroundStyle(Theme.secondary).lineLimit(1)
+                    }
+                    Spacer(minLength: 0)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Use \(template.name)")
+            .accessibilityAddTraits(selected ? .isSelected : [])
+            Button("Edit") { editing = template }.buttonStyle(ControlStyle(kind: .quiet, compact: true))
+        }
+        .padding(.horizontal, 14).padding(.vertical, 9)
+    }
     @ViewBuilder var keyStatus: some View {
         switch status {
-        case .idle: EmptyView()
-        case .checking: HStack(spacing: 6) { ProgressView().controlSize(.small); caption("Checking with OpenRouter…") }
+        case .idle: Text("Not validated yet").font(.system(size: 11.5)).foregroundStyle(Theme.secondary)
+        case .checking: HStack(spacing: 6) { DotProgress(value: nil, dots: 10).frame(width: 50, height: 5); Text("Checking with OpenRouter…").font(.system(size: 11.5)).foregroundStyle(Theme.secondary) }
         case .valid(let detail):
-            HStack(spacing: 6) {
-                Label(detail, systemImage: "checkmark.circle.fill").font(.caption).foregroundStyle(.green)
-                Spacer()
-                Button("Remove Key", role: .destructive) { remove() }.buttonStyle(ControlStyle(kind: .quiet, compact: true))
+            HStack(spacing: 8) {
+                Label(detail, systemImage: "checkmark.circle.fill").font(.system(size: 11.5)).foregroundStyle(Theme.you).lineLimit(1)
+                Button("Remove", role: .destructive) { remove() }.buttonStyle(ControlStyle(kind: .quiet, compact: true))
             }
-        case .invalid(let message): Label(message, systemImage: "xmark.circle.fill").font(.caption).foregroundStyle(Theme.orange)
+        case .invalid(let message): Label(message, systemImage: "xmark.circle.fill").font(.system(size: 11.5)).foregroundStyle(Theme.orange).lineLimit(2)
         }
     }
     func validate() {

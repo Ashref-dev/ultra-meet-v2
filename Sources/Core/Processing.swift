@@ -51,9 +51,8 @@ extension AppState {
     func analyze(_ id: UUID) {
         guard analyzingID == nil, let meeting = meetings.first(where: { $0.id == id }), !meeting.segments.isEmpty else { return }
         analysisFailure = nil
-        let key = Keychain.read()
+        let key = readKey()
         guard !key.isEmpty else {
-            hasOpenRouterKey = false
             analysisFailure = AnalysisFailure(id: id, message: "Add your OpenRouter API key in Settings → AI Analysis to analyze meetings.")
             return
         }
@@ -65,7 +64,9 @@ extension AppState {
             do {
                 let result = try await OpenRouter.analyze(meeting: meeting, template: template, model: model, key: key)
                 try Task.checkCancellation()
+                let previous = meetings.first { $0.id == id }?.title
                 update(id) { $0.apply(result, template: template.name, model: model) }
+                if meetings.first(where: { $0.id == id })?.title != previous { flashRename(id) }
             } catch is CancellationError {
             } catch {
                 analysisFailure = AnalysisFailure(id: id, message: error.localizedDescription)
@@ -73,4 +74,12 @@ extension AppState {
         }
     }
     func cancelAnalysis() { analysisTask?.cancel() }
+    /// Briefly highlights a meeting the AI just renamed, so the new name is noticed in the sidebar.
+    func flashRename(_ id: UUID) {
+        renamedID = id
+        Task {
+            try? await Task.sleep(for: .seconds(2.5))
+            if renamedID == id { renamedID = nil }
+        }
+    }
 }

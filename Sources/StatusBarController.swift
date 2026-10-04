@@ -10,6 +10,8 @@ final class StatusBarController: NSObject {
     private let popover = NSPopover()
     private var subscriptions = Set<AnyCancellable>()
     private var appearance = ""
+    private var ripple: Timer?
+    private var phase = 0.0
 
     init(state: AppState) {
         self.state = state
@@ -20,7 +22,7 @@ final class StatusBarController: NSObject {
             button.target = self
             button.action = #selector(clicked)
             button.sendAction(on: [.leftMouseUp, .rightMouseUp])
-            button.imagePosition = .imageLeading
+            button.imagePosition = .imageOnly
             button.setAccessibilityLabel("Ultra Transcribe")
         }
         let host = NSHostingController(rootView: MenuBarPanel(state: state))
@@ -102,27 +104,36 @@ final class StatusBarController: NSObject {
         return item
     }
 
+    /// The icon is the whole status: live dots while recording, a flat line when paused, a ripple while transcribing.
     private func refresh() {
         guard let button = item.button else { return }
         let recording = state.activeID != nil
         let paused = recording && state.recorder.paused
-        let title = recording ? Meeting.timestamp(state.elapsed) : state.processingID != nil ? "\(Int(state.engine.fraction * 100))%" : ""
-        let levels = recording ? columnLevels(paused: paused) : nil
-        let key = "\(title)|\(levels.map { $0.map { Int($0 * 5) } } ?? [])"
+        let working = !recording && state.isWorking
+        if working && ripple == nil {
+            ripple = Timer.scheduledTimer(withTimeInterval: 0.12, repeats: true) { [weak self] _ in
+                MainActor.assumeIsolated { self?.phase += 0.7; self?.refresh() }
+            }
+        } else if !working, let timer = ripple {
+            timer.invalidate()
+            ripple = nil
+        }
+        let levels = recording && !paused ? columnLevels() : working ? rippleLevels() : nil
+        let key = paused ? "paused" : levels.map { $0.map { String(Int($0 * 5)) }.joined() } ?? "idle"
         guard key != appearance else { return }
         appearance = key
-        button.image = Self.icon(levels: levels)
-        button.attributedTitle = title.isEmpty ? NSAttributedString() : NSAttributedString(string: " " + title, attributes: [
-            .font: NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .medium),
-            .foregroundColor: paused ? NSColor.secondaryLabelColor : NSColor.labelColor
-        ])
-        button.setAccessibilityValue(recording ? "\(paused ? "Paused" : "Recording") \(title)" : title.isEmpty ? "Ready" : "Transcribing \(title)")
+        button.image = Self.icon(levels: levels, alpha: paused ? 0.4 : 1)
+        button.setAccessibilityValue(recording ? (paused ? "Paused" : "Recording \(Meeting.timestamp(state.elapsed))") : working ? "Transcribing" : "Ready")
+        button.toolTip = recording ? "\(paused ? "Paused" : "Recording") · \(Meeting.timestamp(state.elapsed))" : working ? "Transcribing \(Int(state.engine.fraction * 100))%" : "Ultra Transcribe"
+    }
+
+    private func rippleLevels() -> [Double] {
+        (0..<LogoGlyph.heights.count).map { 0.35 + 0.65 * max(0, sin(phase - Double($0) * 0.9)) }
     }
 
     /// The last few level samples, one per logo column, so the icon itself moves with the conversation.
-    private func columnLevels(paused: Bool) -> [Double] {
+    private func columnLevels() -> [Double] {
         let count = LogoGlyph.heights.count
-        guard !paused else { return Array(repeating: 0, count: count) }
         let samples = state.recorder.levels.history.suffix(count).map { Double(max($0.you, $0.colleagues)) }
         return samples.enumerated().map { index, level in
             let shape = Double(LogoGlyph.heights[index]) / Double(LogoGlyph.rows)
@@ -130,10 +141,10 @@ final class StatusBarController: NSObject {
         }
     }
 
-    /// The dot-matrix logo as a template image; recording swaps the fixed shape for live levels.
-    private static func icon(levels: [Double]?) -> NSImage {
-        let image = NSImage(size: NSSize(width: 20, height: 16), flipped: false) { rect in
-            NSColor.black.setFill()
+    /// The dot-matrix logo as a template image; recording swaps the fixed shape for live levels, paused fades it.
+    private static func icon(levels: [Double]?, alpha: CGFloat = 1) -> NSImage {
+        let image = NSImage(size: NSSize(width: 20, height: 16), flipped: true) { rect in
+            NSColor.black.withAlphaComponent(alpha).setFill()
             LogoGlyph.draw(in: rect.insetBy(dx: 1, dy: 1.5), levels: levels) { NSBezierPath(ovalIn: $0).fill() }
             return true
         }

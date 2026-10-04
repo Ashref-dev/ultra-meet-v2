@@ -1,3 +1,12 @@
+# QA · 2.1 (polish pass)
+
+- Menu bar shows only the glyph, no timer (screenshots while recording and transcribing; the ripple was visible). The faded paused state was added afterwards and not captured on screen.
+- Panel note field: taller, focused with an orange ring. Typing was not automated, because synthetic keystrokes would reach the foreground app.
+- Library sidebar collapses and expands; Settings panes (General, Recording, Transcription, Storage) checked on screen.
+- AI analysis with the user's key and model renamed `Meeting · Sat, 3 Oct at 21:55` to “Launch Plan Task Review” and produced all sections in 69 s.
+- RAM benchmark in README. 34 unit tests pass; tests no longer touch the real Keychain.
+- Rebrand: bundle ID `tn.achraf.ultratranscribe`. The saved OpenRouter key migrates from the old Keychain entry; macOS asks once for microphone and Mac-audio permission and to allow Keychain access.
+
 # QA · 2.0 (menu-bar redesign)
 
 Verified on this Mac (Apple Silicon, macOS 27), with the app built by `scripts/build.sh`, signed with Apple Development, `codesign --verify --deep --strict` passing.

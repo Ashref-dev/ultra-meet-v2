@@ -19,9 +19,11 @@ Operate mode. A compact recording instrument in the menu bar and a quiet reading
 
 ## Surfaces
 
-- **Menu-bar icon:** template dot-matrix logo; while recording, its columns follow live audio and the timer sits beside it; paused collapses to a flat dotted line.
-- **Panel (380 pt):** header with logo and ⋯ menu. Idle card: title, date, compact You/Colleagues source pills (shake when you try to turn both off). Live card: editable name, participant avatars with level halos, talk-time split bar, quick note. 66 pt waveform, timer, pause, start/stop. Recent meetings when idle.
-- **Library window:** fixed 270 pt sidebar (logo, settings, start, search, rows with paper selection and dot progress), meeting detail with status, Copy/Export/⋯, editable title, date/duration/participants, Transcript / AI notes / My notes tabs.
+- **Logo:** one 7-column dot glyph (`LogoGlyph`) drawn by the app icon, the menu-bar icon, the panel header and both window sidebars.
+- **Menu-bar icon:** glyph only, no text. Recording: columns follow live audio. Paused: the logo shape at 40% opacity. Transcribing: a travelling ripple.
+- **Panel (380 pt):** header with logo and ⋯ menu. Idle card: title, date, compact You/Colleagues source pills (shake when you try to turn both off). Live card: editable name, participant avatars with level halos, talk-time split bar, 96 pt `NoteEditor` (multi-line, scrolls, 14 pt fades at top and bottom, orange focus ring). 66 pt waveform, timer, pause, start/stop. Recent meetings with an “All meetings ↗” button when idle.
+- **Library window:** collapsible (toolbar button, ⌃⌘S, remembered) 270 pt sidebar (logo, settings, start, search, rows with paper selection and dot progress), meeting detail with status, Copy/Export/⋯, editable title, date/duration/participants, Transcript / AI notes / My notes tabs.
 - **Transcript:** speaker turns. Avatar and colored name with start time head each turn; a colored rail binds every line beneath; per-line timestamps seek playback; right-to-left lines align right.
 - **AI notes:** empty state with template picker and Analyze with AI; inline failure with Open Settings; loading; rendered notes with task checkboxes, re-analyze.
-- **Settings:** sidebar panes General, Recording, Transcription, AI Analysis, Storage. Language chips, model cards, key validation, searchable model catalog sheet with prices, template editor sheet.
+- **Settings:** own sidebar (logo, orange selection, “Made by achraf.tn”), 540 pt content column of `SettingsSection` cards with `SettingsRow` / `SettingsToggle` (shared `SwitchKnob`), `Segmented` with sliding thumb, `KeyCaps`. Panes: General, Recording (reuses `SourcePicker`), Transcription (model cards with measured memory and a Recommended badge), AI Analysis, Storage.
+- **AI rename:** the renamed row cross-fades its title and glows orange with “Renamed by AI” for 2.5 s.

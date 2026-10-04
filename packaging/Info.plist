@@ -3,7 +3,7 @@
 <plist version="1.0"><dict>
 <key>CFBundleName</key><string>Ultra Transcribe</string>
 <key>CFBundleDisplayName</key><string>Ultra Transcribe</string>
-<key>CFBundleIdentifier</key><string>tn.ashref.ultratranscribe</string>
+<key>CFBundleIdentifier</key><string>tn.achraf.ultratranscribe</string>
 <key>CFBundleExecutable</key><string>UltraTranscribe</string>
 <key>CFBundleVersion</key><string>2</string>
 <key>CFBundleShortVersionString</key><string>2.0.0</string>

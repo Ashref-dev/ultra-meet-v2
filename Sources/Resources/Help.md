@@ -2,7 +2,7 @@
 
 Ultra Transcribe lives in the menu bar. Click the dot-matrix icon for the recorder; right-click it for Start, Pause, Stop, Meeting Library, Settings and Quit. It never appears in the Dock or the app switcher.
 
-**Record.** Choose who gets recorded with the You (microphone, green) and Colleagues (Mac audio, orange) toggles, then Start recording. The meeting is created and named automatically; rename it any time by clicking its name. While recording, the panel shows talk time per side and a field for quick notes. Get everyone’s consent before recording.
+**Record.** Choose who gets recorded with the You (microphone, green) and Colleagues (Mac audio, orange) toggles, then Start recording. The meeting is created and named automatically; rename it any time by clicking its name. While recording, the panel shows talk time per side and a note field; Return starts a new line and everything you write is saved to the meeting. Get everyone’s consent before recording.
 
 **Transcribe.** Stop finalizes the audio, transcribes it on this Mac with Qwen3-ASR, and opens the transcript, grouped by You and Colleagues. Audio never leaves the Mac. Settings → Transcription sets the model and the languages people speak; choosing only those (for example English and Arabic) prevents short sounds from being read as other languages.
 
@@ -10,4 +10,4 @@ Ultra Transcribe lives in the menu bar. Click the dot-matrix icon for the record
 
 **Library.** Search titles, transcripts and notes. Click a timestamp to play from there. Copy copies the current tab; Export saves everything as Markdown. Audio of transcribed meetings is deleted after the retention period in Settings → Storage; transcripts and notes are kept.
 
-Shortcuts: ⌘N start recording, ⌘⇧P pause/resume, ⌘⇧S stop, ⌘L library, ⌘O import audio, ⌘, settings.
+Shortcuts: ⌘N start recording, ⌘⇧P pause/resume, ⌘⇧S stop, ⌘L library, ⌃⌘S toggle sidebar, ⌘O import audio, ⌘, settings.

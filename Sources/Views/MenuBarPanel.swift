@@ -84,7 +84,10 @@ struct MenuBarPanel: View {
             HStack {
                 MonoLabel("Recent")
                 Spacer()
-                Button("All meetings") { state.showMeeting(nil) }.buttonStyle(ControlStyle(kind: .quiet, compact: true))
+                Button { state.showMeeting(nil) } label: {
+                    HStack(spacing: 5) { Text("All meetings"); Image(systemName: "arrow.up.right").font(.system(size: 8.5, weight: .bold)) }
+                }
+                .buttonStyle(ControlStyle(compact: true))
             }
             .padding(.horizontal, 16)
             ForEach(recent) { meeting in
@@ -99,10 +102,9 @@ struct MenuBarPanel: View {
     }
 }
 
-/// Idle card: who gets recorded, as two balanced tiles.
+/// Idle card: title, date and who gets recorded.
 private struct ReadyCard: View {
     @ObservedObject var state: AppState
-    @State private var refused: CGFloat = 0
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .firstTextBaseline) {
@@ -110,63 +112,13 @@ private struct ReadyCard: View {
                 Spacer()
                 MonoLabel(Date().formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated)))
             }
-            HStack(spacing: 6) {
-                SourcePill(title: "You", detail: "Microphone", symbol: "mic.fill", color: Theme.you, isOn: binding(microphone: true))
-                SourcePill(title: "Colleagues", detail: "Mac audio", symbol: "speaker.wave.2.fill", color: Theme.colleagues, isOn: binding(microphone: false))
-                Spacer(minLength: 0)
-            }
-            .modifier(Shake(animatableData: refused))
+            SourcePicker(state: state)
             if !state.engine.ready(state.preferences.model) && !state.engine.busy {
                 Button { state.showSettings(.transcription) } label: {
                     Label("Install the speech model to get transcripts", systemImage: "arrow.down.circle").font(.system(size: 11.5))
                 }.buttonStyle(.link)
             }
         }
-    }
-    func binding(microphone: Bool) -> Binding<Bool> {
-        let source = state.preferences.source
-        return Binding(
-            get: { microphone ? source.usesMicrophone : source.usesSystemAudio },
-            set: { value in
-                let next = microphone ? AudioSource.from(microphone: value, system: source.usesSystemAudio) : AudioSource.from(microphone: source.usesMicrophone, system: value)
-                guard let next else { withAnimation(.linear(duration: 0.35)) { refused += 1 }; return }
-                state.preferences.source = next
-                state.savePreferences()
-            })
-    }
-}
-
-/// Compact source toggle: colored icon, name and a mini switch on one line.
-private struct SourcePill: View {
-    let title: String
-    let detail: String
-    let symbol: String
-    let color: Color
-    @Binding var isOn: Bool
-    @State private var hovering = false
-    var body: some View {
-        Button { withAnimation(Theme.feedback) { isOn.toggle() } } label: {
-            HStack(spacing: 7) {
-                Image(systemName: symbol).font(.system(size: 8.5, weight: .bold))
-                    .foregroundStyle(isOn ? .white : Theme.secondary)
-                    .frame(width: 18, height: 18)
-                    .background(isOn ? color : Theme.line, in: Circle())
-                Text(title).font(.system(size: 12, weight: .semibold)).foregroundStyle(isOn ? Color.primary : Theme.secondary)
-                Capsule().fill(isOn ? color : Theme.secondary.opacity(0.25)).frame(width: 22, height: 13)
-                    .overlay(alignment: isOn ? .trailing : .leading) { Circle().fill(.white).padding(2).shadow(color: .black.opacity(0.15), radius: 0.5, y: 0.5) }
-            }
-            .padding(.leading, 5).padding(.trailing, 7).frame(height: 28)
-            .background(isOn ? color.opacity(0.08) : hovering ? Theme.line.opacity(0.4) : .clear, in: RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous).strokeBorder(isOn ? color.opacity(hovering ? 0.6 : 0.3) : Theme.line))
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(PressStyle())
-        .onHover { hovering = $0 }
-        .animation(Theme.feedback, value: hovering)
-        .help(isOn ? "\(title) (\(detail)) will be recorded. Click to turn off." : "Click to record \(title.lowercased()) (\(detail)).")
-        .accessibilityLabel("\(title), \(detail)")
-        .accessibilityValue(isOn ? "Recorded" : "Not recorded")
-        .accessibilityAddTraits(.isToggle)
     }
 }
 
@@ -183,13 +135,8 @@ private struct LiveCard: View {
             }
             MonoLabel("Started \(meeting.createdAt.formatted(.dateTime.hour().minute())) · \(meeting.createdAt.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated)))")
             TalkShare(meter: state.recorder.levels, source: meeting.source)
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Image(systemName: "pencil").font(.system(size: 10, weight: .semibold)).foregroundStyle(Theme.secondary)
-                TextField("Jot a note…", text: Binding(get: { meeting.notes }, set: { value in state.update(meeting.id) { $0.notes = value } }), axis: .vertical)
-                    .textFieldStyle(.plain).font(.system(size: 12.5)).lineLimit(1...4)
-            }
-            .padding(.horizontal, 10).padding(.vertical, 8)
-            .background(Theme.background, in: RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous))
+            NoteEditor(text: Binding(get: { meeting.notes }, set: { value in state.update(meeting.id) { $0.notes = value } }), placeholder: "Jot a note…")
+                .frame(height: 96)
         }
     }
 }

@@ -8,7 +8,9 @@ Requires Apple Silicon and macOS 15 or later. This build is signed with an Apple
 
 - **Left-click** the menu-bar icon: recorder panel. Toggle You / Colleagues, then **Start recording**. The meeting is created and named instantly; the panel gets out of the way.
 - **Right-click** the icon: native menu with Start, Pause/Resume, Stop, Meeting Library, Settings, Quit.
-- While recording, the icon’s dots move with the conversation and show the timer. The panel shows talk time per side, the editable meeting name and a quick-note field.
+- The icon is the whole status: while recording its dots move with the conversation, paused fades it, and a ripple runs while transcribing. No timer in the menu bar; the panel has it.
+- While recording, the panel shows the editable meeting name, talk time per side, and a multi-line note field (Return for new lines, scrolls with soft fades) that writes straight into the meeting’s notes.
+- The library sidebar collapses with the toolbar button or ⌃⌘S.
 - **Stop** finalizes audio, queues local transcription and opens the meeting. Transcripts are grouped into speaker turns: You (green) and Colleagues (orange). Arabic and other right-to-left lines are right-aligned.
 - **AI notes → Analyze with AI** sends the transcript text (never audio) to your OpenRouter model with the selected template. The result has a summary, discussion, decisions, action items for You and for Colleagues, and open questions. Auto-named meetings get a descriptive title; names you typed are kept.
 
@@ -20,9 +22,21 @@ The app is an agent (`LSUIElement`): no Dock icon, no ⌘-Tab entry.
 |---|---|
 | General | Appearance, open at login, shortcuts |
 | Recording | Default sources, microphone, Voice Isolation mic mode, permissions |
-| Transcription | Model (Best 1.7B BF16 · Balanced 1.7B 8-bit · Fast 0.6B), languages spoken, names and terms |
+| Transcription | Model with measured memory and a recommendation for this Mac, languages spoken, names and terms |
 | AI Analysis | OpenRouter key (validated, stored in Keychain), model picker over the live OpenRouter catalog, analysis templates |
 | Storage | Audio retention, library location |
+
+## Speech models
+
+Measured on Apple Silicon: memory footprint (Activity Monitor “Memory”) while transcribing 2 minutes of real meeting audio.
+
+| Model | Loaded | Peak while transcribing | Speed | Recommended for |
+|---|---|---|---|---|
+| Fast · Qwen3-ASR 0.6B 8-bit | 1.2 GB | 1.9 GB | ~85× real time | 8 GB Macs |
+| Balanced · Qwen3-ASR 1.7B 8-bit | 2.5 GB | 3.5 GB | ~40× | 12–16 GB |
+| Best · Qwen3-ASR 1.7B BF16 | 4.0 GB | 5.0 GB | ~27× | 16 GB and up |
+
+Memory is used only while a meeting is being transcribed; the worker process exits afterwards. Long meetings add about 0.25 GB per hour per track for decoded audio.
 
 ## Transcription pipeline
 

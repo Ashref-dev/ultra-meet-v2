@@ -6,94 +6,164 @@ import SwiftUI
 struct SettingsView: View {
     @ObservedObject var state: AppState
     var body: some View {
-        NavigationSplitView {
-            List(SettingsPane.allCases, selection: Binding(get: { state.settingsPane }, set: { if let pane = $0 { state.settingsPane = pane } })) { pane in
-                Label(pane.title, systemImage: pane.symbol).tag(pane)
-            }
-            .navigationSplitViewColumnWidth(190)
-            .toolbar(removing: .sidebarToggle)
-        } detail: {
-            Group {
-                switch state.settingsPane {
-                case .general: GeneralSettings(state: state)
-                case .recording: RecordingSettings(state: state)
-                case .transcription: TranscriptionSettings(state: state)
-                case .analysis: AnalysisSettings(state: state)
-                case .storage: StorageSettings(state: state)
+        HStack(spacing: 0) {
+            sidebar.frame(width: 196).background(Theme.background.ignoresSafeArea())
+            Divider().ignoresSafeArea()
+            ScrollView {
+                Group {
+                    switch state.settingsPane {
+                    case .general: GeneralSettings(state: state)
+                    case .recording: RecordingSettings(state: state)
+                    case .transcription: TranscriptionSettings(state: state)
+                    case .analysis: AnalysisSettings(state: state)
+                    case .storage: StorageSettings(state: state)
+                    }
                 }
+                .id(state.settingsPane)
+                .transition(.opacity.animation(.easeOut(duration: 0.14)))
+                .frame(maxWidth: 540)
+                .padding(.horizontal, 32).padding(.vertical, 26)
+                .frame(maxWidth: .infinity)
             }
-            .formStyle(.grouped)
-            .scrollContentBackground(.hidden)
-            .background(Theme.background)
-            .navigationTitle(state.settingsPane.title)
+            .background(Theme.paper.ignoresSafeArea())
         }
         .tint(Theme.orange)
-        .toggleStyle(.switch)
         .frame(minWidth: 720, minHeight: 520)
         .onChange(of: state.preferences) { _, _ in state.savePreferences() }
     }
+    var sidebar: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 8) {
+                LogoMark(size: 13)
+                Text("Settings").font(.system(size: 14, weight: .semibold))
+            }
+            .padding(.horizontal, 10).padding(.top, 8).padding(.bottom, 14)
+            ForEach(SettingsPane.allCases) { pane in
+                Button { withAnimation(Theme.selection) { state.settingsPane = pane } } label: {
+                    HStack(spacing: 9) {
+                        Image(systemName: pane.symbol).font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(state.settingsPane == pane ? Theme.orange : Theme.secondary).frame(width: 18)
+                        Text(pane.title).font(.system(size: 13, weight: state.settingsPane == pane ? .semibold : .regular))
+                        Spacer()
+                    }
+                    .padding(.horizontal, 10).frame(height: 30).contentShape(Rectangle())
+                }
+                .buttonStyle(RowStyle(selected: state.settingsPane == pane))
+                .accessibilityAddTraits(state.settingsPane == pane ? .isSelected : [])
+            }
+            Spacer()
+            MonoLabel("Made by achraf.tn").padding(10)
+        }
+        .padding(.horizontal, 10)
+    }
 }
 
-private func caption(_ text: String) -> some View {
-    Text(text).font(.caption).foregroundStyle(Theme.secondary).fixedSize(horizontal: false, vertical: true)
+// MARK: Building blocks
+
+/// Titled card of rows with an optional footnote.
+struct SettingsSection<Content: View>: View {
+    let title: String
+    var footer: String?
+    @ViewBuilder let content: Content
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            MonoLabel(title).padding(.leading, 2)
+            VStack(spacing: 0) { content }.card()
+            if let footer {
+                Text(footer).font(.system(size: 11.5)).foregroundStyle(Theme.secondary).fixedSize(horizontal: false, vertical: true).padding(.horizontal, 2)
+            }
+        }
+        .padding(.bottom, 22)
+    }
 }
+
+/// Label on the left, control on the right; dividers are added by the caller.
+struct SettingsRow<Accessory: View>: View {
+    let title: String
+    var detail: String?
+    @ViewBuilder let accessory: Accessory
+    var body: some View {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(.system(size: 13))
+                if let detail { Text(detail).font(.system(size: 11.5)).foregroundStyle(Theme.secondary).fixedSize(horizontal: false, vertical: true) }
+            }
+            Spacer(minLength: 8)
+            accessory
+        }
+        .padding(.horizontal, 14).padding(.vertical, 10)
+        .frame(minHeight: 44)
+    }
+}
+
+/// A whole row that toggles, with the shared switch.
+struct SettingsToggle: View {
+    let title: String
+    var detail: String?
+    @Binding var isOn: Bool
+    var body: some View {
+        Button { isOn.toggle() } label: {
+            SettingsRow(title: title, detail: detail) { SwitchKnob(isOn: isOn) }.contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(title)
+        .accessibilityValue(isOn ? "On" : "Off")
+        .accessibilityAddTraits(.isToggle)
+    }
+}
+
+struct RowDivider: View {
+    var body: some View { Divider().padding(.leading, 14) }
+}
+
+private func openURL(_ string: String) { if let url = URL(string: string) { NSWorkspace.shared.open(url) } }
+
+// MARK: Panes
 
 struct GeneralSettings: View {
     @ObservedObject var state: AppState
+    static let shortcuts: [(String, [String])] = [
+        ("Start recording", ["⌘", "N"]), ("Pause or resume", ["⌘", "⇧", "P"]), ("Stop and transcribe", ["⌘", "⇧", "S"]),
+        ("Meeting library", ["⌘", "L"]), ("Toggle sidebar", ["⌃", "⌘", "S"]), ("Import audio", ["⌘", "O"]), ("Settings", ["⌘", ","])
+    ]
     var body: some View {
-        Form {
-            Section {
-                Picker("Appearance", selection: $state.preferences.appearance) {
-                    Text("System").tag("system")
-                    Text("Light").tag("light")
-                    Text("Dark").tag("dark")
-                }.pickerStyle(.segmented)
-                Toggle("Open at login", isOn: Binding(get: { state.preferences.launchAtLogin }, set: { state.setLogin($0) }))
-                if SMAppService.mainApp.status == .requiresApproval {
-                    Button("Approve in Login Items…") { SMAppService.openSystemSettingsLoginItems() }
+        VStack(alignment: .leading, spacing: 0) {
+            SettingsSection(title: "App") {
+                SettingsRow(title: "Appearance") {
+                    Segmented(options: [("system", "System"), ("light", "Light"), ("dark", "Dark")], selection: $state.preferences.appearance)
                 }
-            } footer: { caption("Ultra Transcribe lives in the menu bar. Left-click the icon for the recorder, right-click for quick actions.") }
-            Section("Keyboard") {
-                shortcut("Start recording", "⌘N")
-                shortcut("Pause or resume", "⌘⇧P")
-                shortcut("Stop and transcribe", "⌘⇧S")
-                shortcut("Meeting library", "⌘L")
-                shortcut("Import audio", "⌘O")
-                shortcut("Settings", "⌘,")
+                RowDivider()
+                SettingsToggle(title: "Open at login", detail: "Starts quietly in the menu bar.", isOn: Binding(get: { state.preferences.launchAtLogin }, set: { state.setLogin($0) }))
+                if SMAppService.mainApp.status == .requiresApproval {
+                    RowDivider()
+                    SettingsRow(title: "Needs your approval", detail: "macOS asks before apps open at login.") {
+                        Button("Login Items…") { SMAppService.openSystemSettingsLoginItems() }.buttonStyle(ControlStyle(compact: true))
+                    }
+                }
             }
-            Section { caption("Ultra Transcribe 2.0 · Made by ashref.tn") }
+            SettingsSection(title: "Keyboard", footer: "Left-click the menu bar icon for the recorder, right-click for quick actions.") {
+                ForEach(Array(Self.shortcuts.enumerated()), id: \.offset) { index, shortcut in
+                    if index > 0 { RowDivider() }
+                    HStack {
+                        Text(shortcut.0).font(.system(size: 13))
+                        Spacer()
+                        KeyCaps(keys: shortcut.1)
+                    }
+                    .padding(.horizontal, 14).frame(height: 36)
+                }
+            }
         }
         .onAppear { state.refreshLoginStatus() }
-    }
-    func shortcut(_ title: String, _ keys: String) -> some View {
-        LabeledContent(title) { Text(keys).font(Theme.mono).foregroundStyle(Theme.secondary) }
     }
 }
 
 struct RecordingSettings: View {
     @ObservedObject var state: AppState
-    var body: some View {
-        Form {
-            Section {
-                Toggle(isOn: source(microphone: true)) { Label { Text("You") ; caption("Your microphone") } icon: { dot(Theme.you) } }
-                Toggle(isOn: source(microphone: false)) { Label { Text("Colleagues"); caption("Audio from your Mac: calls, browser, apps") } icon: { dot(Theme.colleagues) } }
-            } header: { Text("Record by default") } footer: {
-                caption("Separate tracks let transcripts and AI notes tell who said what. Use headphones so your microphone doesn’t pick up your colleagues; duplicates are removed when it does.")
-            }
-            Section {
-                LabeledContent("Microphone", value: AVCaptureDevice.default(for: .audio)?.localizedName ?? "No input device")
-                LabeledContent("Mic mode") {
-                    HStack(spacing: 8) {
-                        Text(micMode).foregroundStyle(Theme.secondary)
-                        Button("Change…") { AVCaptureDevice.showSystemUserInterface(.microphoneModes) }.buttonStyle(ControlStyle(compact: true))
-                    }
-                }
-                Button("Sound Settings…") { open("x-apple.systempreferences:com.apple.Sound-Settings.extension") }
-                Button("Microphone Permission…") { open("x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone") }
-                Button("System Audio Permission…") { open("x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") }
-            } header: { Text("Devices and permissions") } footer: {
-                caption("Voice Isolation is Apple’s noise removal for your microphone. macOS lets you switch it while a recording is running: use Change… or the ⋯ menu in the menu bar. Colleagues are recorded with “System Audio Recording Only”; screen recording is never needed.")
-            }
+    var microphonePermission: String {
+        switch AVCaptureDevice.authorizationStatus(for: .audio) {
+        case .authorized: return "Allowed"
+        case .denied, .restricted: return "Not allowed"
+        default: return "Asks on first recording"
         }
     }
     var micMode: String {
@@ -103,49 +173,73 @@ struct RecordingSettings: View {
         default: return "Standard"
         }
     }
-    func dot(_ color: Color) -> some View { Circle().fill(color).frame(width: 8, height: 8) }
-    func source(microphone: Bool) -> Binding<Bool> {
-        Binding(
-            get: { microphone ? state.preferences.source.usesMicrophone : state.preferences.source.usesSystemAudio },
-            set: { value in
-                let current = state.preferences.source
-                if let next = microphone ? AudioSource.from(microphone: value, system: current.usesSystemAudio) : AudioSource.from(microphone: current.usesMicrophone, system: value) { state.preferences.source = next }
-            })
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            SettingsSection(title: "Record by default", footer: "Separate tracks let transcripts and AI notes tell who said what. Headphones keep colleagues out of your microphone.") {
+                HStack { SourcePicker(state: state); Spacer() }.padding(12)
+            }
+            SettingsSection(title: "Microphone", footer: "Voice Isolation removes background voices and noise. macOS lets you switch it while a recording is running.") {
+                SettingsRow(title: "Input", detail: AVCaptureDevice.default(for: .audio)?.localizedName ?? "No input device") {
+                    Button("Sound…") { openURL("x-apple.systempreferences:com.apple.Sound-Settings.extension") }.buttonStyle(ControlStyle(compact: true))
+                }
+                RowDivider()
+                SettingsRow(title: "Mic mode", detail: micMode) {
+                    Button("Change…") { AVCaptureDevice.showSystemUserInterface(.microphoneModes) }.buttonStyle(ControlStyle(compact: true))
+                }
+            }
+            SettingsSection(title: "Permissions") {
+                SettingsRow(title: "Microphone", detail: microphonePermission) {
+                    Button("Open…") { openURL("x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone") }.buttonStyle(ControlStyle(compact: true))
+                }
+                RowDivider()
+                SettingsRow(title: "Mac audio", detail: "System Audio Recording Only. Screen recording is never needed.") {
+                    Button("Open…") { openURL("x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") }.buttonStyle(ControlStyle(compact: true))
+                }
+            }
+        }
     }
-    func open(_ string: String) { if let url = URL(string: string) { NSWorkspace.shared.open(url) } }
 }
 
 struct TranscriptionSettings: View {
     @ObservedObject var state: AppState
+    static let common = ["English", "Arabic", "French", "Spanish", "German", "Italian", "Portuguese", "Turkish", "Hindi", "Chinese", "Japanese", "Korean"]
+    let memory = ProcessInfo.processInfo.physicalMemory
+    var recommended: ASRModel { ASRModel.recommended(forMemory: memory) }
+    var shownLanguages: [String] { Self.common + state.preferences.languages.filter { !Self.common.contains($0) } }
+    var languageSummary: String {
+        switch state.preferences.languages.count {
+        case 0: return "Any of 30 languages is detected."
+        case 1: return "Everything is transcribed as \(state.preferences.languages[0])."
+        default: return "Each sentence is recognized as \(state.preferences.languages.formatted(.list(type: .or)))."
+        }
+    }
     var body: some View {
-        Form {
-            Section {
-                ForEach(ASRModel.allCases.reversed()) { model in
-                    Button { state.preferences.model = model } label: {
-                        HStack(spacing: 10) {
-                            Image(systemName: state.preferences.model == model ? "largecircle.fill.circle" : "circle").foregroundStyle(state.preferences.model == model ? Theme.orange : Theme.secondary)
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(model.label)
-                                caption(model == .best ? "Most accurate, especially for quiet voices and switching languages." : model == .large ? "Nearly as accurate, uses less memory." : "Quickest, lightest, least accurate.")
-                            }
-                            Spacer()
-                            if state.engine.ready(model) { MonoLabel("Installed", color: Theme.secondary) } else { MonoLabel(model.size) }
-                        }.contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(state.engine.busy)
+        VStack(alignment: .leading, spacing: 0) {
+            SettingsSection(title: "Speech model", footer: "Runs entirely on this Mac (\(Int((Double(memory) / 1_073_741_824).rounded())) GB memory). Memory is only used while a meeting is being transcribed.") {
+                ForEach(Array(ASRModel.allCases.reversed().enumerated()), id: \.element) { index, model in
+                    if index > 0 { RowDivider() }
+                    modelRow(model)
                 }
                 if state.engine.busy && state.processingID == nil {
-                    ProgressView(value: state.engine.fraction) { Text(state.engine.message).font(.caption) }.tint(Theme.orange)
-                    Button("Cancel Download") { state.cancelProcessing() }
+                    RowDivider()
+                    VStack(alignment: .leading, spacing: 8) {
+                        DotProgress(value: state.engine.fraction, dots: 40).frame(height: 6)
+                        HStack {
+                            Text(state.engine.message).font(.system(size: 11.5)).foregroundStyle(Theme.secondary)
+                            Spacer()
+                            Button("Cancel") { state.cancelProcessing() }.buttonStyle(ControlStyle(kind: .quiet, compact: true))
+                        }
+                    }
+                    .padding(14)
                 } else if !state.engine.ready(state.preferences.model) {
-                    Button("Download \(state.preferences.model.shortLabel) (\(state.preferences.model.size))") { state.runOperation { await state.installModels() } }
-                        .buttonStyle(ControlStyle(kind: .primary)).disabled(state.operationTask != nil)
+                    RowDivider()
+                    SettingsRow(title: "\(state.preferences.model.shortLabel) isn’t installed", detail: "\(state.preferences.model.size) download, one time.") {
+                        Button("Download") { state.runOperation { await state.installModels() } }
+                            .buttonStyle(ControlStyle(kind: .primary, compact: true)).disabled(state.operationTask != nil)
+                    }
                 }
-            } header: { Text("Speech model") } footer: {
-                caption("Qwen3-ASR runs entirely on this Mac. Audio never leaves it. The first download also installs a private runtime.")
             }
-            Section {
+            SettingsSection(title: "Languages spoken", footer: "\(languageSummary) Choose only the languages people speak, so short sounds can’t be mistaken for other languages. Dialects such as Saudi Arabic count as Arabic.") {
                 FlowLayout(spacing: 6) {
                     ForEach(shownLanguages, id: \.self) { language in
                         ToggleChip(title: language, isOn: Binding(
@@ -158,54 +252,61 @@ struct TranscriptionSettings: View {
                         ForEach(Preferences.supportedLanguages.filter { !shownLanguages.contains($0) }, id: \.self) { language in
                             Button(language) { state.preferences.languages.append(language) }
                         }
-                    } label: { Text("More…").font(.system(size: 12)) }
+                    } label: { HStack(spacing: 4) { Text("More"); Image(systemName: "chevron.down").font(.system(size: 8, weight: .bold)) } }
                     .menuStyle(.button).buttonStyle(ControlStyle(kind: .quiet, compact: true)).menuIndicator(.hidden).fixedSize()
                 }
-                .padding(.vertical, 4)
-                LabeledContent("Recognized as") {
-                    Text(languageSummary).foregroundStyle(Theme.secondary)
-                }
-            } header: { Text("Languages spoken in your meetings") } footer: {
-                caption("Pick only the languages people actually speak, for example English and Arabic. Short sounds then can’t be mistaken for Chinese or Hindi, and people can still switch languages sentence by sentence. Dialects such as Saudi Arabic are recognized as Arabic. Leave everything off to detect any language.")
+                .padding(12)
             }
-            Section {
-                TextField("Names and terms", text: $state.preferences.vocabulary, prompt: Text("Ashref, Kubernetes, Q3 roadmap"), axis: .vertical).lineLimit(2...4)
-            } header: { Text("Spelling") } footer: {
-                caption("Names, products and jargon, separated by commas. Keep it to words: sentences here can confuse recognition.")
+            SettingsSection(title: "Names and terms", footer: "Comma-separated names, products and jargon. Words only: sentences here can confuse recognition.") {
+                TextField("", text: $state.preferences.vocabulary, prompt: Text("Achraf, Kubernetes, Q3 roadmap"), axis: .vertical)
+                    .textFieldStyle(.plain).font(.system(size: 13)).lineLimit(1...4).padding(14)
             }
         }
     }
-    static let common = ["English", "Arabic", "French", "Spanish", "German", "Italian", "Portuguese", "Turkish", "Hindi", "Chinese", "Japanese", "Korean"]
-    var shownLanguages: [String] { Self.common + state.preferences.languages.filter { !Self.common.contains($0) } }
-    var languageSummary: String {
-        switch state.preferences.languages.count {
-        case 0: return "Any of 30 languages"
-        case 1: return "\(state.preferences.languages[0]) only"
-        default: return state.preferences.languages.formatted(.list(type: .or))
+    func modelRow(_ model: ASRModel) -> some View {
+        let selected = state.preferences.model == model
+        return Button { withAnimation(Theme.feedback) { state.preferences.model = model } } label: {
+            HStack(alignment: .center, spacing: 12) {
+                ZStack {
+                    Circle().strokeBorder(selected ? Theme.orange : Theme.secondary.opacity(0.4), lineWidth: 1.5).frame(width: 16, height: 16)
+                    if selected { Circle().fill(Theme.orange).frame(width: 8, height: 8).transition(.scale) }
+                }
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 7) {
+                        Text(model.label).font(.system(size: 13, weight: selected ? .semibold : .regular))
+                        if model == recommended {
+                            Text("Recommended").font(.system(size: 9.5, weight: .semibold, design: .monospaced)).textCase(.uppercase)
+                                .foregroundStyle(Theme.orange).padding(.horizontal, 5).padding(.vertical, 2)
+                                .background(Theme.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
+                        }
+                    }
+                    Text("≈ \(model.memoryGB.formatted(.number.precision(.fractionLength(1)))) GB memory · \(model.speed)× real time").font(.system(size: 11.5)).foregroundStyle(Theme.secondary)
+                }
+                Spacer()
+                MonoLabel(state.engine.ready(model) ? "Installed" : model.size)
+            }
+            .padding(.horizontal, 14).padding(.vertical, 11).contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
+        .disabled(state.engine.busy)
+        .accessibilityAddTraits(selected ? [.isSelected, .isButton] : .isButton)
     }
 }
 
 struct StorageSettings: View {
     @ObservedObject var state: AppState
     var body: some View {
-        Form {
-            Section {
-                Picker("Delete audio after", selection: $state.preferences.retentionDays) {
-                    Text("Never").tag(0)
-                    Text("1 day").tag(1)
-                    Text("7 days").tag(7)
-                    Text("14 days").tag(14)
-                    Text("30 days").tag(30)
-                    Text("90 days").tag(90)
+        VStack(alignment: .leading, spacing: 0) {
+            SettingsSection(title: "Audio", footer: "Only audio of transcribed meetings is deleted. Transcripts and notes are kept, and incomplete recordings are never removed.") {
+                SettingsRow(title: "Delete audio after") {
+                    Segmented(options: [(0, "Never"), (1, "1 d"), (7, "7 d"), (14, "14 d"), (30, "30 d"), (90, "90 d")], selection: $state.preferences.retentionDays)
                 }
-            } header: { Text("Audio") } footer: {
-                caption("Only audio of transcribed meetings is deleted. Transcripts and notes are kept. Failed or incomplete recordings are always kept.")
             }
-            Section {
-                LabeledContent("Library") { Text(state.library.root.path).font(.system(size: 11, design: .monospaced)).textSelection(.enabled).lineLimit(2) }
-                Button("Show in Finder") { NSWorkspace.shared.open(state.library.root) }
-            } footer: { caption("Everything stays on this Mac. Use FileVault for encryption, and keep this folder out of cloud sync if you want it fully local.") }
+            SettingsSection(title: "Library", footer: "Everything stays on this Mac. Use FileVault for encryption, and keep this folder out of cloud sync.") {
+                SettingsRow(title: "Location", detail: state.library.root.path.replacingOccurrences(of: NSHomeDirectory(), with: "~")) {
+                    Button("Show in Finder") { NSWorkspace.shared.open(state.library.root) }.buttonStyle(ControlStyle(compact: true))
+                }
+            }
         }
     }
 }

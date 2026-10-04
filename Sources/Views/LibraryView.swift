@@ -4,22 +4,35 @@ import SwiftUI
 struct LibraryView: View {
     @ObservedObject var state: AppState
     @State private var deleteID: UUID?
+    @AppStorage("sidebarCollapsed") private var collapsed = false
     var filtered: [Meeting] {
         let query = state.search.trimmingCharacters(in: .whitespaces)
         return state.meetings.filter { query.isEmpty || $0.title.localizedCaseInsensitiveContains(query) || $0.transcript.localizedCaseInsensitiveContains(query) || $0.summary.localizedCaseInsensitiveContains(query) || $0.notes.localizedCaseInsensitiveContains(query) }
     }
     var body: some View {
         HStack(spacing: 0) {
-            sidebar.frame(width: 270).background(Theme.background.ignoresSafeArea())
-            Divider().ignoresSafeArea()
+            if !collapsed {
+                sidebar.frame(width: 270).background(Theme.background.ignoresSafeArea())
+                    .transition(.move(edge: .leading).combined(with: .opacity))
+                Divider().ignoresSafeArea()
+            }
             Group {
                 if let meeting = state.selected { MeetingDetail(state: state, meeting: meeting) } else { emptyState }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Theme.paper.ignoresSafeArea())
         }
+        .overlay(alignment: .topLeading) {
+            Button { withAnimation(Theme.selection) { collapsed.toggle() } } label: {
+                Image(systemName: "sidebar.left").font(.system(size: 13, weight: .medium)).frame(width: 28, height: 22).contentShape(Rectangle())
+            }
+            .buttonStyle(ControlStyle(kind: .quiet, compact: true))
+            .help(collapsed ? "Show sidebar (⌃⌘S)" : "Hide sidebar (⌃⌘S)")
+            .accessibilityLabel(collapsed ? "Show sidebar" : "Hide sidebar")
+            .padding(.leading, 76).padding(.top, -24)
+        }
         .tint(Theme.orange)
-        .frame(minWidth: 820, minHeight: 560)
+        .frame(minWidth: collapsed ? 560 : 820, minHeight: 560)
         .alert("Something needs your attention", isPresented: Binding(get: { state.error != nil }, set: { if !$0 { state.error = nil } })) {
             Button("OK") { state.error = nil }
         } message: { Text(state.error ?? "") }

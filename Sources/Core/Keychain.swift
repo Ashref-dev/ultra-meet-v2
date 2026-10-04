@@ -2,14 +2,23 @@ import Foundation
 import Security
 
 enum Keychain {
+    static let service = "tn.achraf.ultratranscribe"
+    /// Keys saved before the achraf.tn rebrand are moved to the new service on first read.
+    private static let legacyService = "tn.ashref.ultratranscribe"
     static func read() -> String {
-        let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: "tn.ashref.ultratranscribe", kSecAttrAccount as String: "openrouter", kSecReturnData as String: true]
+        if let key = stored(in: service) { return key }
+        guard let legacy = stored(in: legacyService), (try? save(legacy)) != nil else { return "" }
+        SecItemDelete([kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: legacyService, kSecAttrAccount as String: "openrouter"] as CFDictionary)
+        return legacy
+    }
+    private static func stored(in service: String) -> String? {
+        let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecAttrAccount as String: "openrouter", kSecReturnData as String: true]
         var result: CFTypeRef?
-        guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess, let data = result as? Data else { return "" }
-        return String(data: data, encoding: .utf8) ?? ""
+        guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess, let data = result as? Data, let key = String(data: data, encoding: .utf8), !key.isEmpty else { return nil }
+        return key
     }
     static func save(_ value: String) throws {
-        let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: "tn.ashref.ultratranscribe", kSecAttrAccount as String: "openrouter"]
+        let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecAttrAccount as String: "openrouter"]
         if value.isEmpty {
             let result = SecItemDelete(query as CFDictionary)
             guard result == errSecSuccess || result == errSecItemNotFound else { throw AppError.message("Could not remove the key from Keychain (\(result)).") }

@@ -33,14 +33,28 @@ struct OpenRouterKey: Decodable, Equatable {
 struct MeetingAnalysis: Equatable {
     var title: String?
     var notes: String
-    /// The model is asked to start with `# Title`; everything after it is the notes.
+    /// The model is asked to start with `# Title`. Models vary, so `## Title`, `Title: …` and a bold first
+    /// line are accepted too; generic headings such as "Meeting Notes" are dropped rather than used as names.
     static func parse(_ output: String) -> MeetingAnalysis {
         var lines = output.trimmingCharacters(in: .whitespacesAndNewlines).components(separatedBy: .newlines)
         if lines.first?.hasPrefix("```") == true { lines.removeFirst(); if lines.last?.hasPrefix("```") == true { lines.removeLast() } }
         while lines.first?.trimmingCharacters(in: .whitespaces).isEmpty == true { lines.removeFirst() }
-        guard let first = lines.first, first.hasPrefix("# ") else { return MeetingAnalysis(title: nil, notes: lines.joined(separator: "\n")) }
-        let title = first.dropFirst(2).trimmingCharacters(in: CharacterSet(charactersIn: " \"'*`")).prefix(90)
-        return MeetingAnalysis(title: title.isEmpty ? nil : String(title), notes: lines.dropFirst().joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines))
+        let all = MeetingAnalysis(title: nil, notes: lines.joined(separator: "\n"))
+        guard let first = lines.first, let candidate = titleCandidate(first) else { return all }
+        if ["summary", "overview", "discussion", "decisions", "action items", "open questions"].contains(candidate.lowercased()) { return all }
+        let notes = lines.dropFirst().joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+        let generic = ["meeting notes", "meeting summary", "notes", "meeting", "title"].contains(candidate.lowercased())
+        return MeetingAnalysis(title: generic || candidate.isEmpty ? nil : String(candidate.prefix(90)), notes: notes)
+    }
+    private static func titleCandidate(_ line: String) -> String? {
+        let trimmed = line.trimmingCharacters(in: .whitespaces)
+        var body: Substring
+        if trimmed.hasPrefix("#") && !trimmed.hasPrefix("###") { body = trimmed.drop { $0 == "#" } }
+        else if trimmed.lowercased().hasPrefix("title:") { body = trimmed.dropFirst(6) }
+        else if trimmed.hasPrefix("**") && trimmed.hasSuffix("**") && trimmed.count > 4 { body = trimmed.dropFirst(2).dropLast(2) }
+        else { return nil }
+        if body.lowercased().hasPrefix("title:") { body = body.dropFirst(6) }
+        return body.trimmingCharacters(in: CharacterSet(charactersIn: " \"'*`:"))
     }
 }
 

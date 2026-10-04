@@ -4,6 +4,7 @@ import SwiftUI
 struct AppCommands: Commands {
     @ObservedObject var state: AppState
     let delegate: ApplicationDelegate
+    @AppStorage("sidebarCollapsed") private var sidebarCollapsed = false
     var body: some Commands {
         CommandGroup(replacing: .appSettings) {
             Button("Settings…") { delegate.showSettings(state.settingsPane) }.keyboardShortcut(",")
@@ -12,6 +13,10 @@ struct AppCommands: Commands {
             Button("Start Recording") { state.startRecording() }.keyboardShortcut("n").disabled(!state.canStart)
             Button("Import Audio…") { state.importAudio() }.keyboardShortcut("o").disabled(!state.canStart)
             Button("Meeting Library") { delegate.showLibrary() }.keyboardShortcut("l")
+        }
+        CommandGroup(before: .toolbar) {
+            Button(sidebarCollapsed ? "Show Sidebar" : "Hide Sidebar") { withAnimation(Theme.selection) { sidebarCollapsed.toggle() } }
+                .keyboardShortcut("s", modifiers: [.command, .control])
         }
         CommandMenu("Recording") {
             Button(state.recorder.paused ? "Resume Recording" : "Pause Recording") { state.togglePause() }

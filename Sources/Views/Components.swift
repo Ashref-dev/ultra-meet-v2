@@ -303,3 +303,62 @@ struct DotWaveform: View {
         return abs(sin(phase) * 0.6 + sin(phase * 1.7) * 0.4) * middle * 0.38
     }
 }
+
+/// The small switch used by source pills and settings rows.
+struct SwitchKnob: View {
+    let isOn: Bool
+    var color: Color = Theme.orange
+    var body: some View {
+        Capsule().fill(isOn ? color : Theme.secondary.opacity(0.25)).frame(width: 24, height: 14)
+            .overlay(alignment: isOn ? .trailing : .leading) { Circle().fill(.white).padding(2).shadow(color: .black.opacity(0.18), radius: 0.6, y: 0.5) }
+            .animation(.snappy(duration: 0.2), value: isOn)
+            .accessibilityHidden(true)
+    }
+}
+
+/// Segmented choice with a sliding paper thumb.
+struct Segmented<Value: Hashable>: View {
+    let options: [(Value, String)]
+    @Binding var selection: Value
+    @Namespace private var thumb
+    var body: some View {
+        HStack(spacing: 2) {
+            ForEach(options, id: \.0) { value, title in
+                Button { withAnimation(Theme.selection) { selection = value } } label: {
+                    Text(title).font(.system(size: 11.5, weight: selection == value ? .semibold : .regular))
+                        .foregroundStyle(selection == value ? Color.primary : Theme.secondary)
+                        .padding(.horizontal, 10).frame(height: 22)
+                        .background {
+                            if selection == value {
+                                RoundedRectangle(cornerRadius: 5, style: .continuous).fill(Theme.paper)
+                                    .shadow(color: .black.opacity(0.08), radius: 1.5, y: 0.5)
+                                    .matchedGeometryEffect(id: "thumb", in: thumb)
+                            }
+                        }
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(selection == value ? [.isSelected, .isButton] : .isButton)
+            }
+        }
+        .padding(2)
+        .background(Theme.line.opacity(0.7), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+    }
+}
+
+/// A keyboard shortcut drawn as key caps.
+struct KeyCaps: View {
+    let keys: [String]
+    var body: some View {
+        HStack(spacing: 3) {
+            ForEach(keys, id: \.self) { key in
+                Text(key).font(.system(size: 10.5, weight: .medium, design: .monospaced))
+                    .frame(minWidth: 18, minHeight: 18).padding(.horizontal, 3)
+                    .background(Theme.paper, in: RoundedRectangle(cornerRadius: 4, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 4, style: .continuous).strokeBorder(Theme.line))
+                    .shadow(color: .black.opacity(0.06), radius: 0, y: 1)
+            }
+        }
+        .accessibilityLabel(keys.joined())
+    }
+}

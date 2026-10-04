@@ -39,6 +39,26 @@ enum ASRModel: String, Codable, CaseIterable, Identifiable {
         case .best: return "1.7B · BF16"
         }
     }
+    /// Peak memory while transcribing, measured on Apple Silicon with 2 minutes of meeting audio.
+    var memoryGB: Double {
+        switch self {
+        case .small: return 1.9
+        case .large: return 3.5
+        case .best: return 5.0
+        }
+    }
+    /// Measured transcription speed, as a multiple of real time.
+    var speed: Int {
+        switch self {
+        case .small: return 85
+        case .large: return 40
+        case .best: return 27
+        }
+    }
+    static func recommended(forMemory bytes: UInt64) -> ASRModel {
+        let gigabytes = Double(bytes) / 1_073_741_824
+        return gigabytes < 12 ? .small : gigabytes < 16 ? .large : .best
+    }
     var size: String {
         switch self {
         case .small: return "1 GB"

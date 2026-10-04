@@ -37,7 +37,7 @@ final class AppState: ObservableObject {
     @Published var pendingID: UUID?
     @Published var analyzingID: UUID?
     @Published var analysisFailure: AnalysisFailure?
-    @Published var hasOpenRouterKey = false
+    @Published var renamedID: UUID?
     @Published var settingsPane: SettingsPane = .general
     @Published var queued: [UUID] = []
     @Published var elapsed: Double = 0
@@ -53,6 +53,8 @@ final class AppState: ObservableObject {
     var operationTask: Task<Void, Never>?
     var analysisTask: Task<Void, Never>?
     var preparingToQuit = false
+    /// Reads the OpenRouter key; tests replace it so they never touch the real Keychain.
+    var readKey: () -> String = Keychain.read
     /// Window routing, provided by the application delegate.
     var showMeeting: (UUID?) -> Void = { _ in }
     var showSettings: (SettingsPane) -> Void = { _ in }
@@ -76,7 +78,6 @@ final class AppState: ObservableObject {
             try library.save(meetings[index])
         }
         selectedID = meetings.first?.id
-        hasOpenRouterKey = root == nil && !Keychain.read().isEmpty
         recorder.objectWillChange.sink { [weak self] in self?.objectWillChange.send() }.store(in: &subscriptions)
         engine.objectWillChange.sink { [weak self] in self?.objectWillChange.send() }.store(in: &subscriptions)
         recorder.onError = { [weak self] message in self?.captureFailed(message) }
@@ -112,7 +113,6 @@ final class AppState: ObservableObject {
     }
     func saveOpenRouterKey(_ key: String) throws {
         try Keychain.save(key)
-        hasOpenRouterKey = !key.isEmpty
     }
     func setLogin(_ enabled: Bool) {
         do {

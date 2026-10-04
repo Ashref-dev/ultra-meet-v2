@@ -4,10 +4,10 @@ import XCTest
 
 final class MenuBarWorkflowTests: XCTestCase {
     func testLegacyPreferencesLoadWithDefaultTemplates() throws {
-        let legacy = #"{"model":"large","source":"both","retentionDays":7,"generateEnglishNotes":true,"showDockIcon":true,"startInMenuBar":false,"launchAtLogin":false,"appearance":"system","language":"Auto-detect","vocabulary":"Ashref","openRouterModel":"openai/gpt-4.1-mini","cleanupInstructions":"Old"}"#
+        let legacy = #"{"model":"large","source":"both","retentionDays":7,"generateEnglishNotes":true,"showDockIcon":true,"startInMenuBar":false,"launchAtLogin":false,"appearance":"system","language":"Auto-detect","vocabulary":"Achraf","openRouterModel":"openai/gpt-4.1-mini","cleanupInstructions":"Old"}"#
         let preferences = try JSONDecoder().decode(Preferences.self, from: Data(legacy.utf8))
         XCTAssertEqual(preferences.model, .large)
-        XCTAssertEqual(preferences.vocabulary, "Ashref")
+        XCTAssertEqual(preferences.vocabulary, "Achraf")
         XCTAssertEqual(preferences.openRouterModel, "openai/gpt-4.1-mini")
         XCTAssertEqual(preferences.templates.map(\.name), AnalysisTemplate.defaults.map(\.name))
         XCTAssertEqual(preferences.template.name, "Meeting notes")
@@ -17,6 +17,24 @@ final class MenuBarWorkflowTests: XCTestCase {
         var chosen = Preferences()
         chosen.languages = ["English", "Arabic"]
         XCTAssertEqual(try JSONDecoder().decode(Preferences.self, from: JSONEncoder().encode(chosen)).languages, ["English", "Arabic"])
+    }
+
+    func testAnalysisTitleFormatsFromDifferentModels() {
+        XCTAssertEqual(MeetingAnalysis.parse("## Q4 pricing review\n## Summary\nOk").title, "Q4 pricing review")
+        XCTAssertEqual(MeetingAnalysis.parse("Title: Launch checklist\n\n## Summary").title, "Launch checklist")
+        XCTAssertEqual(MeetingAnalysis.parse("**Hiring sync with Aziz**\n## Summary").title, "Hiring sync with Aziz")
+        let generic = MeetingAnalysis.parse("# Meeting Notes\n\n## Summary\nWe agreed.")
+        XCTAssertNil(generic.title)
+        XCTAssertEqual(generic.notes, "## Summary\nWe agreed.")
+        XCTAssertNil(MeetingAnalysis.parse("### You\n- [ ] Task").title)
+    }
+
+    func testModelRecommendationFollowsMacMemory() {
+        let gigabyte: UInt64 = 1_073_741_824
+        XCTAssertEqual(ASRModel.recommended(forMemory: 8 * gigabyte), .small)
+        XCTAssertEqual(ASRModel.recommended(forMemory: 12 * gigabyte), .large)
+        XCTAssertEqual(ASRModel.recommended(forMemory: 16 * gigabyte), .best)
+        XCTAssertTrue(ASRModel.allCases.allSatisfy { $0.memoryGB < 8 })
     }
 
     func testTranscriptGroupsConsecutiveLinesBySpeaker() {
@@ -129,7 +147,7 @@ final class MenuBarWorkflowTests: XCTestCase {
         meeting.segments = [.init(start: 0, end: 1, text: "Hello", source: "microphone")]
         try library.save(meeting)
         let state = try AppState(root: root)
-        guard Keychain.read().isEmpty else { throw XCTSkip("An OpenRouter key exists in this Keychain.") }
+        state.readKey = { "" }
         state.analyze(meeting.id)
         XCTAssertNil(state.analyzingID)
         XCTAssertEqual(state.analysisFailure?.id, meeting.id)

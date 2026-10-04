@@ -20,6 +20,8 @@ struct MeetingDetail: View {
             Divider()
             if let error = meeting.error, !isActive { notice(error) }
             content.frame(maxWidth: .infinity, maxHeight: .infinity)
+                .id(tab)
+                .transition(.opacity.animation(.easeOut(duration: 0.14)))
             if playback.duration > 0 { player }
             if isActive {
                 VStack(spacing: 0) {
@@ -113,11 +115,7 @@ struct MeetingDetail: View {
     @ViewBuilder var content: some View {
         switch tab {
         case "My notes":
-            TextEditor(text: Binding(get: { meeting.notes }, set: { value in state.update(meeting.id) { $0.notes = value } }))
-                .font(.system(size: 14)).lineSpacing(5).scrollContentBackground(.hidden).padding(.horizontal, 27).padding(.vertical, 22)
-                .overlay(alignment: .topLeading) {
-                    if meeting.notes.isEmpty { Text("Anything worth remembering…").font(.system(size: 14)).foregroundStyle(Theme.secondary.opacity(0.7)).padding(.top, 22).padding(.leading, 32).allowsHitTesting(false) }
-                }
+            NoteEditor(text: Binding(get: { meeting.notes }, set: { value in state.update(meeting.id) { $0.notes = value } }), placeholder: "Anything worth remembering…", fontSize: 14, inset: CGSize(width: 27, height: 24), fade: 22, framed: false)
         case "AI notes":
             AnalysisView(state: state, meeting: meeting)
         default:
@@ -209,7 +207,7 @@ struct AnalysisView: View {
     var body: some View {
         if analyzing {
             VStack(spacing: 14) {
-                ProgressView().controlSize(.regular).tint(Theme.orange)
+                DotProgress(value: nil, dots: 20).frame(width: 140, height: 6)
                 Text("Analyzing the conversation…").font(.system(size: 15, weight: .medium))
                 MonoLabel("\(state.preferences.template.name) · \(state.preferences.openRouterModel)")
                 Button("Cancel") { state.cancelAnalysis() }.buttonStyle(ControlStyle(kind: .quiet, compact: true))
@@ -258,7 +256,7 @@ struct AnalysisView: View {
         HStack(alignment: .top, spacing: 8) {
             Image(systemName: "exclamationmark.circle.fill").foregroundStyle(Theme.orange)
             Text(message).font(.system(size: 12)).fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
-            if !state.hasOpenRouterKey || message.contains("API key") {
+            if message.contains("Settings") {
                 Button("Open Settings") { state.showSettings(.analysis) }.buttonStyle(ControlStyle(compact: true))
             }
         }
