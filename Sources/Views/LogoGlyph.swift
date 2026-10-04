@@ -31,8 +31,8 @@ enum LogoGlyph {
 
     // MARK: App icon
 
-    /// The macOS app icon at any size: shadowed paper plate on Apple's 1024 grid, glossy orange dots
-    /// raised above recessed lattice dots, lit from the top. Used for AppIcon and the Credits pane.
+    /// The macOS app icon at any size ("Ember"): a top-lit, shadowed orange plate on Apple's 1024 grid carrying
+    /// the flat dot matrix in white. Used for AppIcon and the Credits pane.
     static func appIcon(size: CGFloat) -> NSImage {
         NSImage(size: NSSize(width: size, height: size), flipped: true) { bounds in
             guard let context = NSGraphicsContext.current?.cgContext else { return false }
@@ -49,61 +49,32 @@ enum LogoGlyph {
         context.saveGState()
         context.setShadow(offset: CGSize(width: 0, height: 12 * s), blur: 32 * s, color: NSColor(white: 0, alpha: 0.30).cgColor)
         context.addPath(shape)
-        context.setFillColor(NSColor(white: 0.9, alpha: 1).cgColor)
+        context.setFillColor(plateBottom.cgColor)
         context.fillPath()
         context.restoreGState()
 
         context.saveGState()
         context.addPath(shape)
         context.clip()
-        linear(context, [rgb(1, 0.993, 0.978), rgb(0.95, 0.925, 0.885)], from: plate.minY, to: plate.maxY)
-        radial(context, [NSColor(white: 1, alpha: 0.7), NSColor(white: 1, alpha: 0)], center: CGPoint(x: plate.midX, y: plate.minY + plate.height * 0.1), radius: plate.width * 0.7)
+        linear(context, [plateTop, plateBottom], from: plate.minY, to: plate.maxY)
+        radial(context, [NSColor(white: 1, alpha: 0.35), NSColor(white: 1, alpha: 0)], center: CGPoint(x: plate.midX, y: plate.minY + plate.height * 0.1), radius: plate.width * 0.7)
         // Rim light: bright top edge, faint dark bottom edge.
         context.addPath(shape)
         context.setLineWidth(10 * s)
         context.replacePathWithStrokedPath()
         context.clip()
-        linear(context, [NSColor(white: 1, alpha: 0.95), NSColor(white: 1, alpha: 0), NSColor(white: 0, alpha: 0.10)], from: plate.minY, to: plate.maxY)
+        linear(context, [NSColor(white: 1, alpha: 0.95), NSColor(white: 1, alpha: 0), NSColor(white: 0, alpha: 0.12)], from: plate.minY, to: plate.maxY)
         context.restoreGState()
 
         let width = plate.width * 0.78
         for dot in dots(in: CGRect(x: plate.midX - width / 2, y: plate.midY - width / aspect / 2, width: width, height: width / aspect)) {
-            if dot.active { raised(context, dot.rect) } else { recessed(context, dot.rect) }
+            context.setFillColor(NSColor(white: 1, alpha: dot.active ? 1 : 0.2).cgColor)
+            context.fillEllipse(in: dot.rect)
         }
     }
 
-    /// A glossy orange bead casting a soft shadow.
-    private static func raised(_ context: CGContext, _ rect: CGRect) {
-        let d = rect.width
-        context.saveGState()
-        context.setShadow(offset: CGSize(width: 0, height: d * 0.12), blur: d * 0.14, color: NSColor(red: 0.35, green: 0.08, blue: 0.02, alpha: 0.38).cgColor)
-        context.setFillColor(ink.cgColor)
-        context.fillEllipse(in: rect)
-        context.restoreGState()
-        context.saveGState()
-        context.addEllipse(in: rect)
-        context.clip()
-        radial(context, [rgb(1, 0.56, 0.36), ink, rgb(0.62, 0.13, 0.04)], center: CGPoint(x: rect.midX - d * 0.16, y: rect.minY + d * 0.26), radius: d * 0.72)
-        radial(context, [NSColor(white: 1, alpha: 0.65), NSColor(white: 1, alpha: 0)], center: CGPoint(x: rect.midX - d * 0.14, y: rect.minY + d * 0.2), radius: d * 0.26)
-        context.restoreGState()
-    }
-
-    /// A shallow dimple: darker at the top where the rim shades it, catching light at the bottom.
-    private static func recessed(_ context: CGContext, _ rect: CGRect) {
-        context.saveGState()
-        context.addEllipse(in: rect)
-        context.clip()
-        linear(context, [rgb(0.77, 0.73, 0.67), rgb(0.90, 0.87, 0.82)], from: rect.minY, to: rect.maxY)
-        context.restoreGState()
-        context.saveGState()
-        context.setStrokeColor(NSColor(white: 1, alpha: 0.75).cgColor)
-        context.setLineWidth(rect.width * 0.06)
-        context.addArc(center: CGPoint(x: rect.midX, y: rect.midY), radius: rect.width * 0.5, startAngle: .pi * 0.15, endAngle: .pi * 0.85, clockwise: false)
-        context.strokePath()
-        context.restoreGState()
-    }
-
-    private static func rgb(_ red: CGFloat, _ green: CGFloat, _ blue: CGFloat) -> NSColor { NSColor(red: red, green: green, blue: blue, alpha: 1) }
+    private static let plateTop = NSColor(red: 0.96, green: 0.42, blue: 0.18, alpha: 1)
+    private static let plateBottom = NSColor(red: 0.74, green: 0.18, blue: 0.05, alpha: 1)
     private static func gradient(_ colors: [NSColor]) -> CGGradient? {
         CGGradient(colorsSpace: CGColorSpace(name: CGColorSpace.sRGB), colors: colors.map(\.cgColor) as CFArray, locations: nil)
     }
