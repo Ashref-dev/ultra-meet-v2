@@ -4,7 +4,7 @@ import ServiceManagement
 import UniformTypeIdentifiers
 
 enum SettingsPane: String, CaseIterable, Identifiable {
-    case general, recording, transcription, analysis, storage
+    case general, recording, transcription, analysis, storage, credits
     var id: String { rawValue }
     var title: String {
         switch self {
@@ -13,6 +13,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
         case .transcription: return "Transcription"
         case .analysis: return "AI Analysis"
         case .storage: return "Storage"
+        case .credits: return "Credits"
         }
     }
     var symbol: String {
@@ -22,6 +23,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
         case .transcription: return "waveform"
         case .analysis: return "sparkles"
         case .storage: return "internaldrive"
+        case .credits: return "info.circle"
         }
     }
 }

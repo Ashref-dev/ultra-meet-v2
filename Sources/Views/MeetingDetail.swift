@@ -261,7 +261,7 @@ struct AnalysisView: View {
             }
         }
         .padding(12).frame(maxWidth: 460, alignment: .leading)
-        .background(Theme.orange.opacity(0.07), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .background(Theme.orange.opacity(0.07), in: RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous))
     }
 }
 

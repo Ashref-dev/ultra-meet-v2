@@ -1,6 +1,6 @@
 # Ultra Transcribe
 
-A menu-bar meeting recorder for macOS. One click records your microphone (**You**) and your Mac’s audio (**Colleagues**) on separate tracks, transcribes them locally with Qwen3-ASR, and, only when you ask, turns the transcript into meeting notes with an OpenRouter model.
+A menu-bar meeting recorder for macOS, by [achraf.tn](https://achraf.tn) · [ultra.achraf.tn](https://ultra.achraf.tn). One click records your microphone (**You**) and your Mac’s audio (**Colleagues**) on separate tracks, transcribes them locally with Qwen3-ASR, and, only when you ask, turns the transcript into meeting notes with an OpenRouter model.
 
 Requires Apple Silicon and macOS 15 or later. This build is signed with an Apple Development certificate, not notarized.
 
@@ -25,6 +25,7 @@ The app is an agent (`LSUIElement`): no Dock icon, no ⌘-Tab entry.
 | Transcription | Model with measured memory and a recommendation for this Mac, languages spoken, names and terms |
 | AI Analysis | OpenRouter key (validated, stored in Keychain), model picker over the live OpenRouter catalog, analysis templates |
 | Storage | Audio retention, library location |
+| Credits | Version, ultra.achraf.tn, achraf.tn, Check for Updates |
 
 ## Speech models
 
@@ -66,7 +67,8 @@ Files are not encrypted by the app; use FileVault. The OpenRouter key lives in t
 
 ```sh
 swift test
-bash scripts/build.sh   # builds, bundles uv and resources, signs with your Apple Development identity if present
+bash scripts/build.sh          # builds, bundles uv and resources, signs with your Apple Development identity if present
+bash scripts/icon/generate.sh  # re-renders the app icon from Sources/Views/LogoGlyph.swift
 ```
 
 Python checks: `basedpyright --project pyrightconfig.json` and `ruff check Sources/Resources/worker.py`.

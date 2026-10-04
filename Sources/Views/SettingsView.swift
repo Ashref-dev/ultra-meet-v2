@@ -17,6 +17,7 @@ struct SettingsView: View {
                     case .transcription: TranscriptionSettings(state: state)
                     case .analysis: AnalysisSettings(state: state)
                     case .storage: StorageSettings(state: state)
+                    case .credits: CreditsSettings()
                     }
                 }
                 .id(state.settingsPane)
@@ -52,7 +53,6 @@ struct SettingsView: View {
                 .accessibilityAddTraits(state.settingsPane == pane ? .isSelected : [])
             }
             Spacer()
-            MonoLabel("Made by achraf.tn").padding(10)
         }
         .padding(.horizontal, 10)
     }
@@ -277,7 +277,7 @@ struct TranscriptionSettings: View {
                         if model == recommended {
                             Text("Recommended").font(.system(size: 9.5, weight: .semibold, design: .monospaced)).textCase(.uppercase)
                                 .foregroundStyle(Theme.orange).padding(.horizontal, 5).padding(.vertical, 2)
-                                .background(Theme.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
+                                .background(Theme.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: Theme.chipRadius, style: .continuous))
                         }
                     }
                     Text("≈ \(model.memoryGB.formatted(.number.precision(.fractionLength(1)))) GB memory · \(model.speed)× real time").font(.system(size: 11.5)).foregroundStyle(Theme.secondary)
@@ -308,5 +308,57 @@ struct StorageSettings: View {
                 }
             }
         }
+    }
+}
+
+struct CreditsSettings: View {
+    private static let icon = LogoGlyph.appIcon(size: 192)
+    static let website = URL(string: "https://ultra.achraf.tn")!
+    static let author = URL(string: "https://achraf.tn")!
+    /// Updates are published on the website for now; point this at the GitHub releases API once the repository is public.
+    static let updates = URL(string: "https://ultra.achraf.tn")!
+    let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "Development"
+    let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String
+    @State private var hovering = false
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            VStack(spacing: 10) {
+                Image(nsImage: Self.icon).resizable().frame(width: 96, height: 96)
+                    .scaleEffect(hovering ? 1.04 : 1).animation(.snappy(duration: 0.25), value: hovering)
+                    .onHover { hovering = $0 }
+                    .accessibilityHidden(true)
+                Text("Ultra Transcribe").font(.system(size: 20, weight: .semibold)).tracking(-0.4)
+                MonoLabel("Version \(version)\(build.map { " (\($0))" } ?? "")")
+                Text("Private meeting transcripts from your menu bar.").font(.system(size: 12.5)).foregroundStyle(Theme.secondary)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.top, 8).padding(.bottom, 26)
+            SettingsSection(title: "Links") {
+                SettingsRow(title: "Website", detail: "ultra.achraf.tn") {
+                    Link(destination: Self.website) { linkLabel("Open") }.buttonStyle(ControlStyle(compact: true))
+                }
+                RowDivider()
+                SettingsRow(title: "Made by", detail: "achraf.tn") {
+                    Link(destination: Self.author) { linkLabel("Open") }.buttonStyle(ControlStyle(compact: true))
+                }
+                RowDivider()
+                SettingsRow(title: "Updates", detail: "You’re on version \(version).") {
+                    Link(destination: Self.updates) { linkLabel("Check for Updates") }.buttonStyle(ControlStyle(kind: .primary, compact: true))
+                }
+            }
+            SettingsSection(title: "Built with", footer: "Speech recognition runs locally with Qwen3-ASR on MLX through mlx-audio. AI analysis uses OpenRouter, only when you ask.") {
+                HStack(spacing: 6) {
+                    ForEach(["Qwen3-ASR", "MLX", "mlx-audio", "OpenRouter", "SwiftUI"], id: \.self) { name in
+                        Text(name).font(.system(size: 11.5, weight: .medium)).padding(.horizontal, 8).frame(height: 22)
+                            .background(Theme.background, in: RoundedRectangle(cornerRadius: Theme.chipRadius, style: .continuous))
+                    }
+                    Spacer(minLength: 0)
+                }
+                .padding(12)
+            }
+        }
+    }
+    func linkLabel(_ title: String) -> some View {
+        HStack(spacing: 4) { Text(title); Image(systemName: "arrow.up.right").font(.system(size: 8.5, weight: .bold)) }
     }
 }

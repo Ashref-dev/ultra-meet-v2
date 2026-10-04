@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 enum Theme {
-    static let orange = Color(red: 0.85, green: 0.25, blue: 0.08)
+    static let orange = Color(nsColor: LogoGlyph.ink)
     static let ember = Color(red: 0.66, green: 0.13, blue: 0.08)
     /// Speakers: you (microphone) are green, colleagues (Mac audio) are orange.
     static let you = adaptive(light: NSColor(red: 0.10, green: 0.56, blue: 0.36, alpha: 1), dark: NSColor(red: 0.33, green: 0.78, blue: 0.53, alpha: 1))
@@ -10,6 +10,7 @@ enum Theme {
     static let readingWidth: CGFloat = 640
     static let radius: CGFloat = 8
     static let controlRadius: CGFloat = 6
+    static let chipRadius: CGFloat = 4
     static let feedback = Animation.easeOut(duration: 0.16)
     static let selection = Animation.snappy(duration: 0.24, extraBounce: 0)
     static let background = adaptive(light: NSColor(red: 0.965, green: 0.955, blue: 0.94, alpha: 1), dark: NSColor(red: 0.11, green: 0.105, blue: 0.10, alpha: 1))
@@ -29,33 +30,16 @@ enum Theme {
     }
 }
 
-/// The Ultra Transcribe mark: columns of dots shaped like a waveform. Shared by the menu bar icon and the UI.
-enum LogoGlyph {
-    static let heights = [1, 2, 4, 3, 5, 2, 1]
-    static let rows = 5
-    /// Calls `fill` for every dot. When `levels` (0…1, one per column) is given, columns follow live audio instead.
-    static func draw(in rect: CGRect, levels: [Double]? = nil, fill: (CGRect) -> Void) {
-        let pitch = rect.width / CGFloat(heights.count)
-        let rowPitch = rect.height / CGFloat(rows)
-        let dot = min(pitch, rowPitch) * 0.78
-        for (column, height) in heights.enumerated() {
-            let count = levels.map { max(1, min(rows, Int((Double(rows) * $0[column]).rounded()))) } ?? height
-            let firstRow = (rows - count) / 2
-            for row in firstRow..<(firstRow + count) {
-                fill(CGRect(x: rect.minX + CGFloat(column) * pitch + (pitch - dot) / 2, y: rect.minY + CGFloat(row) * rowPitch + (rowPitch - dot) / 2, width: dot, height: dot))
-            }
-        }
-    }
-}
-
+/// The logo mark in SwiftUI. For the full app icon use `Image(nsImage: LogoGlyph.appIcon(size:))`.
 struct LogoMark: View {
     var size: CGFloat = 15
-    var color: Color = Theme.orange
     var body: some View {
         Canvas { context, canvas in
-            LogoGlyph.draw(in: CGRect(origin: .zero, size: canvas)) { context.fill(Path(ellipseIn: $0), with: .color(color)) }
+            for dot in LogoGlyph.dots(in: CGRect(origin: .zero, size: canvas)) {
+                context.fill(Path(ellipseIn: dot.rect), with: .color(Color(nsColor: dot.active ? LogoGlyph.ink : LogoGlyph.lattice)))
+            }
         }
-        .frame(width: size * 1.4, height: size)
+        .frame(width: size * LogoGlyph.aspect, height: size)
         .accessibilityHidden(true)
     }
 }

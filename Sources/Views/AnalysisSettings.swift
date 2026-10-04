@@ -139,8 +139,8 @@ struct ModelCatalog: View {
                 TextField("Search, e.g. claude, gemini flash, gpt", text: $query).textFieldStyle(.plain)
             }
             .padding(.horizontal, 10).frame(height: 32)
-            .background(Theme.paper, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).strokeBorder(Theme.line))
+            .background(Theme.paper, in: RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous).strokeBorder(Theme.line))
             .padding(.horizontal, 18).padding(.bottom, 10)
             Divider()
             Group {
@@ -203,8 +203,8 @@ struct TemplateEditor: View {
                 MonoLabel("Instructions")
                 TextEditor(text: $template.prompt)
                     .font(.system(size: 13)).scrollContentBackground(.hidden).padding(8)
-                    .background(Theme.paper, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).strokeBorder(Theme.line))
+                    .background(Theme.paper, in: RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous).strokeBorder(Theme.line))
                     .frame(height: 170)
                 caption("What should the notes focus on? For example: “Focus on budget, objections and next steps with the client.”")
             }

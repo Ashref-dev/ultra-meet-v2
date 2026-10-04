@@ -1,5 +1,9 @@
 # QA · 2.1 (polish pass)
 
+- Logo consistency checked on screen: app icon, Credits icon, menu bar icon and panel header all render the same lattice from `LogoGlyph.swift`.
+- App icon rendered with macOS depth (Apple grid, baked shadow, rim light, glossy beads); contact sheet checked at 512/128/64/32 px on light and dark, shadows fall below.
+- Credits tab: version 2.1.0 (3), links to ultra.achraf.tn and achraf.tn, Check for Updates (opens ultra.achraf.tn until GitHub releases exist).
+
 - Menu bar shows only the glyph, no timer (screenshots while recording and transcribing; the ripple was visible). The faded paused state was added afterwards and not captured on screen.
 - Panel note field: taller, focused with an orange ring. Typing was not automated, because synthetic keystrokes would reach the foreground app.
 - Library sidebar collapses and expands; Settings panes (General, Recording, Transcription, Storage) checked on screen.

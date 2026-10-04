@@ -141,11 +141,13 @@ final class StatusBarController: NSObject {
         }
     }
 
-    /// The dot-matrix logo as a template image; recording swaps the fixed shape for live levels, paused fades it.
+    /// The logo as a template image: faint lattice, solid waveform. Recording swaps the waveform for live levels; paused fades it.
     private static func icon(levels: [Double]?, alpha: CGFloat = 1) -> NSImage {
         let image = NSImage(size: NSSize(width: 20, height: 16), flipped: true) { rect in
-            NSColor.black.withAlphaComponent(alpha).setFill()
-            LogoGlyph.draw(in: rect.insetBy(dx: 1, dy: 1.5), levels: levels) { NSBezierPath(ovalIn: $0).fill() }
+            for dot in LogoGlyph.dots(in: rect.insetBy(dx: 0.5, dy: 1), levels: levels) {
+                NSColor.black.withAlphaComponent(dot.active ? alpha : 0.22).setFill()
+                NSBezierPath(ovalIn: dot.rect).fill()
+            }
             return true
         }
         image.isTemplate = true

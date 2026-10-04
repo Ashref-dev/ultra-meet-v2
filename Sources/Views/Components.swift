@@ -330,7 +330,7 @@ struct Segmented<Value: Hashable>: View {
                         .padding(.horizontal, 10).frame(height: 22)
                         .background {
                             if selection == value {
-                                RoundedRectangle(cornerRadius: 5, style: .continuous).fill(Theme.paper)
+                                RoundedRectangle(cornerRadius: Theme.chipRadius, style: .continuous).fill(Theme.paper)
                                     .shadow(color: .black.opacity(0.08), radius: 1.5, y: 0.5)
                                     .matchedGeometryEffect(id: "thumb", in: thumb)
                             }
@@ -342,7 +342,7 @@ struct Segmented<Value: Hashable>: View {
             }
         }
         .padding(2)
-        .background(Theme.line.opacity(0.7), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+        .background(Theme.line.opacity(0.7), in: RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous))
     }
 }
 
@@ -354,8 +354,8 @@ struct KeyCaps: View {
             ForEach(keys, id: \.self) { key in
                 Text(key).font(.system(size: 10.5, weight: .medium, design: .monospaced))
                     .frame(minWidth: 18, minHeight: 18).padding(.horizontal, 3)
-                    .background(Theme.paper, in: RoundedRectangle(cornerRadius: 4, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 4, style: .continuous).strokeBorder(Theme.line))
+                    .background(Theme.paper, in: RoundedRectangle(cornerRadius: Theme.chipRadius, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: Theme.chipRadius, style: .continuous).strokeBorder(Theme.line))
                     .shadow(color: .black.opacity(0.06), radius: 0, y: 1)
             }
         }
