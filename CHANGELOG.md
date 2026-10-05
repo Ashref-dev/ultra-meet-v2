@@ -2,7 +2,7 @@
 
 All notable changes are listed here. Versions follow [Semantic Versioning](https://semver.org): `0.x` releases may still change behavior between minor versions.
 
-## 0.6.0 · 2026-10-04
+## 0.6.0 · 2026-10-05
 
 Recognition you can trust in mixed-language meetings, clean call audio, live transcripts, and update management.
 
