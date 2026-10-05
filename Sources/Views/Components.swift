@@ -13,7 +13,7 @@ struct MonoLabel: View {
 
 enum ControlKind { case primary, secondary, quiet }
 
-/// Shared button chrome: orange primary, paper secondary, borderless quiet. Hover, press and disabled states included.
+/// Shared action chrome. Glass belongs on controls, not on the text people read.
 struct ControlStyle: ButtonStyle {
     var kind: ControlKind = .secondary
     var expand = false
@@ -29,20 +29,16 @@ struct ControlStyle: ButtonStyle {
         @Environment(\.isEnabled) private var enabled
         @Environment(\.accessibilityReduceMotion) private var reduceMotion
         @State private var hovering = false
-        var shape: RoundedRectangle { RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous) }
+        var shape: RoundedRectangle { RoundedRectangle(cornerRadius: (compact ? Theme.compactControlHeight : Theme.controlHeight) / 2, style: .continuous) }
         var body: some View {
             configuration.label
-                .font(.system(size: compact ? 10.5 : 11.5, weight: .semibold, design: .monospaced))
-                .tracking(0.5)
-                .textCase(.uppercase)
+                .font(.system(size: compact ? 11.5 : 12.5, weight: .semibold))
                 .lineLimit(1)
                 .foregroundStyle(kind == .primary ? Color.white : kind == .quiet ? (hovering ? Color.primary : Theme.secondary) : Color.primary)
                 .padding(.horizontal, kind == .quiet ? 7 : compact ? 10 : 14)
-                .frame(height: compact ? 26 : 34)
+                .frame(height: compact ? Theme.compactControlHeight : Theme.controlHeight)
                 .frame(maxWidth: expand ? .infinity : nil)
-                .background(background, in: shape)
-                .overlay { if kind == .secondary { shape.strokeBorder(hovering ? Theme.secondary.opacity(0.35) : Theme.line) } }
-                .shadow(color: kind == .primary && hovering ? Theme.orange.opacity(0.35) : .clear, radius: 8, y: 2)
+                .modifier(ControlChrome(kind: kind, shape: shape, pressed: configuration.isPressed, hovering: hovering, enabled: enabled))
                 .contentShape(shape)
                 .scaleEffect(configuration.isPressed && !reduceMotion ? 0.97 : 1)
                 .opacity(enabled ? 1 : 0.45)
@@ -50,17 +46,28 @@ struct ControlStyle: ButtonStyle {
                 .animation(reduceMotion ? nil : Theme.feedback, value: hovering)
                 .onHover { hovering = $0 && enabled }
         }
-        var background: Color {
-            switch kind {
-            case .primary: return configuration.isPressed ? Theme.ember : Theme.orange
-            case .secondary: return configuration.isPressed ? Theme.background : Theme.paper
-            case .quiet: return hovering || configuration.isPressed ? Theme.line : .clear
-            }
+    }
+}
+
+private struct ControlChrome: ViewModifier {
+    let kind: ControlKind
+    let shape: RoundedRectangle
+    let pressed: Bool
+    let hovering: Bool
+    let enabled: Bool
+
+    @ViewBuilder func body(content: Content) -> some View {
+        if kind == .quiet {
+            content.background(hovering || pressed ? Theme.line.opacity(0.5) : .clear, in: shape)
+        } else {
+            content.glassSurface(cornerRadius: shape.cornerSize.width,
+                                 tint: kind == .primary ? (pressed ? Theme.ember : Theme.orange) : nil,
+                                 interactive: enabled)
         }
     }
 }
 
-/// Square icon button with the same chrome as `ControlStyle.secondary`.
+/// Icon-only action with the shared glass chrome and an accessible name.
 struct IconButton: View {
     let symbol: String
     let label: String
@@ -81,16 +88,17 @@ struct ToggleChip: View {
     @Binding var isOn: Bool
     var color: Color = Theme.orange
     @State private var hovering = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var body: some View {
-        Button { withAnimation(Theme.feedback) { isOn.toggle() } } label: {
+        Button { withAnimation(reduceMotion ? nil : Theme.feedback) { isOn.toggle() } } label: {
             HStack(spacing: 6) {
                 Image(systemName: isOn ? "checkmark" : "plus").font(.system(size: 8.5, weight: .bold))
                     .foregroundStyle(isOn ? color : Theme.secondary).contentTransition(.symbolEffect(.replace))
                 Text(title).font(.system(size: 12, weight: isOn ? .semibold : .regular)).foregroundStyle(isOn ? Color.primary : Theme.secondary)
             }
-            .padding(.horizontal, 10).frame(height: 26)
-            .background(isOn ? color.opacity(0.10) : hovering ? Theme.line.opacity(0.5) : .clear, in: RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous).strokeBorder(isOn ? color.opacity(0.45) : Theme.line))
+            .padding(.horizontal, 11).frame(height: Theme.compactControlHeight)
+            .background(isOn ? color.opacity(0.12) : hovering ? Theme.line.opacity(0.35) : .clear, in: Capsule())
+            .overlay(Capsule().strokeBorder(isOn ? color.opacity(0.45) : Theme.line))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -145,29 +153,28 @@ struct Shake: GeometryEffect {
 
 struct TabItem: Identifiable, Hashable { let id: String; let symbol: String }
 
-/// Mono tab strip with a sliding orange indicator, as in the reference recorder.
+/// Content tabs stay on the reading surface; the selected capsule marks the current pane.
 struct TabStrip: View {
     let tabs: [TabItem]
     @Binding var selection: String
     @Namespace private var indicator
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var body: some View {
-        HStack(spacing: 22) {
+        HStack(spacing: 4) {
             ForEach(tabs) { tab in
                 Button { withAnimation(reduceMotion ? nil : Theme.selection) { selection = tab.id } } label: {
-                    VStack(spacing: 8) {
-                        HStack(spacing: 6) {
-                            Image(systemName: tab.symbol).font(.system(size: 10.5, weight: .semibold))
-                                .foregroundStyle(selection == tab.id ? Theme.orange : Theme.secondary)
-                            Text(tab.id.uppercased()).font(Theme.mono).tracking(0.6)
-                                .foregroundStyle(selection == tab.id ? Color.primary : Theme.secondary)
-                        }
-                        ZStack {
-                            Color.clear.frame(height: 2)
-                            if selection == tab.id { Capsule().fill(Theme.orange).frame(height: 2).matchedGeometryEffect(id: "tab", in: indicator) }
+                    HStack(spacing: 6) {
+                        Image(systemName: tab.symbol).font(.system(size: 11, weight: .semibold))
+                        Text(tab.id).font(.system(size: 12.5, weight: selection == tab.id ? .semibold : .medium))
+                    }
+                    .foregroundStyle(selection == tab.id ? Theme.orange : Theme.secondary)
+                    .padding(.horizontal, 14)
+                    .frame(height: Theme.controlHeight)
+                    .background {
+                        if selection == tab.id {
+                            Capsule().fill(Theme.selectionFill).matchedGeometryEffect(id: "tab", in: indicator)
                         }
                     }
-                    .padding(.top, 9)
                     .fixedSize()
                     .contentShape(Rectangle())
                 }
@@ -180,11 +187,78 @@ struct TabStrip: View {
 }
 
 extension View {
-    /// White paper surface with hairline border and soft lift.
+    /// Opaque grouped content keeps transcripts and settings readable beside translucent chrome.
     func card() -> some View {
         background(Theme.paper, in: RoundedRectangle(cornerRadius: Theme.radius, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: Theme.radius, style: .continuous).strokeBorder(Theme.line))
-            .shadow(color: .black.opacity(0.05), radius: 8, y: 2)
+            .overlay(RoundedRectangle(cornerRadius: Theme.radius, style: .continuous).strokeBorder(Theme.line.opacity(0.5)))
+    }
+    func glassSurface(cornerRadius: CGFloat = Theme.radius, tint: Color? = nil, interactive: Bool = false) -> some View {
+        modifier(GlassSurface(cornerRadius: cornerRadius, tint: tint, interactive: interactive))
+    }
+    func sidebarSurface() -> some View { background { ChromeSurface(material: .sidebar).ignoresSafeArea() } }
+    func popoverSurface() -> some View { background { ChromeSurface(material: .popover).ignoresSafeArea() } }
+}
+
+/// A single effect container lets related controls share the system's glass renderer.
+struct GlassControls<Content: View>: View {
+    @ViewBuilder let content: Content
+    var body: some View {
+        if #available(macOS 26.0, *) {
+            GlassEffectContainer(spacing: 4) { content }
+        } else {
+            content
+        }
+    }
+}
+
+private struct GlassSurface: ViewModifier {
+    let cornerRadius: CGFloat
+    let tint: Color?
+    let interactive: Bool
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.colorSchemeContrast) private var contrast
+    var shape: RoundedRectangle { RoundedRectangle(cornerRadius: cornerRadius, style: .continuous) }
+
+    @ViewBuilder func body(content: Content) -> some View {
+        if reduceTransparency || contrast == .increased {
+            content.background(tint ?? Theme.paper, in: shape)
+                .overlay(shape.strokeBorder(Theme.secondary.opacity(0.6)))
+        } else if #available(macOS 26.0, *) {
+            content.glassEffect(.regular.tint(tint).interactive(interactive), in: shape)
+        } else if let tint {
+            content.background(tint, in: shape)
+                .overlay(shape.strokeBorder(Theme.line))
+        } else {
+            content.background(.regularMaterial, in: shape)
+                .overlay(shape.strokeBorder(Theme.line))
+        }
+    }
+}
+
+private struct ChromeSurface: View {
+    let material: NSVisualEffectView.Material
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.colorSchemeContrast) private var contrast
+    var body: some View {
+        if reduceTransparency || contrast == .increased {
+            Theme.background
+        } else {
+            NativeMaterial(material: material)
+        }
+    }
+}
+
+private struct NativeMaterial: NSViewRepresentable {
+    let material: NSVisualEffectView.Material
+    func makeNSView(context: Context) -> NSVisualEffectView {
+        let view = NSVisualEffectView()
+        view.blendingMode = .behindWindow
+        view.state = .followsWindowActiveState
+        view.material = material
+        return view
+    }
+    func updateNSView(_ view: NSVisualEffectView, context: Context) {
+        view.material = material
     }
 }
 
@@ -241,14 +315,15 @@ struct DotProgress: View {
     var value: Double?
     var dots = 32
     var color: Color = Theme.orange
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var body: some View {
         let value = self.value.flatMap { $0 > 0 ? $0 : nil }
-        TimelineView(.animation(minimumInterval: 0.08, paused: value != nil)) { timeline in
+        TimelineView(.animation(minimumInterval: 0.08, paused: value != nil || reduceMotion)) { timeline in
             Canvas { context, size in
                 let pitch = size.width / CGFloat(dots)
                 let diameter = min(pitch * 0.62, size.height)
                 let filled = Int((value ?? 0) * Double(dots))
-                let head = Int(timeline.date.timeIntervalSinceReferenceDate * 14) % (dots + 6) - 3
+                let head = reduceMotion ? dots / 2 : Int(timeline.date.timeIntervalSinceReferenceDate * 14) % (dots + 6) - 3
                 for index in 0..<dots {
                     let rect = CGRect(x: CGFloat(index) * pitch + (pitch - diameter) / 2, y: (size.height - diameter) / 2, width: diameter, height: diameter)
                     let lit = value == nil ? max(0.16, 1 - Double(abs(index - head)) * 0.28) : index < filled ? 1 : 0
@@ -313,33 +388,35 @@ struct DotWaveform: View {
 struct SwitchKnob: View {
     let isOn: Bool
     var color: Color = Theme.orange
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var body: some View {
         ZStack(alignment: isOn ? .trailing : .leading) {
             Capsule().fill(isOn ? color : Theme.secondary.opacity(0.25))
-            Circle().fill(.white).frame(width: 10, height: 10).padding(2).shadow(color: .black.opacity(0.18), radius: 0.6)
+            Circle().fill(.white).frame(width: 14, height: 14).padding(3).shadow(color: Theme.controlShadow, radius: 1)
         }
-        .frame(width: 24, height: 14)
-        .animation(.snappy(duration: 0.2), value: isOn)
-            .accessibilityHidden(true)
+        .frame(width: 32, height: 20)
+        .animation(reduceMotion ? nil : Theme.selection, value: isOn)
+        .accessibilityHidden(true)
     }
 }
 
-/// Segmented choice with a sliding paper thumb.
+/// Compact grouped choices with a sliding, opaque selection thumb.
 struct Segmented<Value: Hashable>: View {
     let options: [(Value, String)]
     @Binding var selection: Value
     @Namespace private var thumb
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var body: some View {
         HStack(spacing: 2) {
             ForEach(options, id: \.0) { value, title in
-                Button { withAnimation(Theme.selection) { selection = value } } label: {
+                Button { withAnimation(reduceMotion ? nil : Theme.selection) { selection = value } } label: {
                     Text(title).font(.system(size: 11.5, weight: selection == value ? .semibold : .regular))
                         .foregroundStyle(selection == value ? Color.primary : Theme.secondary)
-                        .padding(.horizontal, 10).frame(height: 22)
+                        .padding(.horizontal, 11).frame(height: Theme.compactControlHeight)
                         .background {
                             if selection == value {
-                                RoundedRectangle(cornerRadius: Theme.chipRadius, style: .continuous).fill(Theme.paper)
-                                    .shadow(color: .black.opacity(0.08), radius: 1.5, y: 0.5)
+                                Capsule().fill(Theme.paper)
+                                    .shadow(color: Theme.controlShadow, radius: 2, y: 1)
                                     .matchedGeometryEffect(id: "thumb", in: thumb)
                             }
                         }
@@ -349,8 +426,8 @@ struct Segmented<Value: Hashable>: View {
                 .accessibilityAddTraits(selection == value ? [.isSelected, .isButton] : .isButton)
             }
         }
-        .padding(2)
-        .background(Theme.line.opacity(0.7), in: RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous))
+        .padding(3)
+        .background(Theme.line.opacity(0.35), in: Capsule())
     }
 }
 

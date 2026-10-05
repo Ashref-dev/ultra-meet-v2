@@ -2,30 +2,34 @@
 
 ## Direction
 
-Operate mode. A compact recording instrument in the menu bar and a quiet reading surface for transcripts. The supplied “Transcript AI” recorder (warm paper, white card, orange stop button, dot-matrix spectrogram, mono labels) is the visual authority.
+Operate mode. A compact recording instrument in the menu bar and a quiet reading surface for transcripts, using the native macOS 27 material language. The original recorder's orange action, speaker colors, shared logo and dot-matrix waveform remain. Navigation and actions use translucent materials; content stays opaque. No decorative glass behind paragraphs or form rows.
 
 ## Tokens (`Sources/Views/Theme.swift`)
 
-- Surfaces: background RGB 0.965/0.955/0.94, paper white; dark-mode equivalents.
-- Accent: orange RGB 0.85/0.25/0.08 for record/primary actions only; ember for pressed.
-- Speakers: **You green** RGB 0.10/0.56/0.36, **Colleagues orange** RGB 0.91/0.45/0.07, each with a deep tone (`youDeep`, `colleaguesDeep`) for two-tone gradients. Used in avatars, rails, waveform, conversation map, talk time, toggles.
-- Radii: cards 8 pt, controls 6 pt, chips 4 pt. Sharp, not bubbly.
-- Type: SF for content; monospaced 11 pt uppercase with 0.6 tracking for metadata, tabs and buttons.
-- Motion: 160 ms ease-out feedback, 240 ms snappy selection; Reduce Motion respected.
+- Surfaces: semantic macOS window background, text background, secondary label and separator colors, adapting to appearance.
+- Accent: the logo's orange for primary actions and selected navigation; ember for pressed.
+- Destructive actions: semantic macOS system red with a Trash glyph, not color alone.
+- Speakers: **You green** RGB 0.10/0.56/0.36, **Colleagues orange** RGB 0.91/0.45/0.07, with adaptive dark colors and deep tones for waveform gradients.
+- Radii: cards 16 pt, fields and navigation rows 10 pt, key caps 5 pt. Action buttons and segmented choices use capsules. Controls are 34 pt high, compact actions 28 pt.
+- Type: SF for content, sentence-case tabs and action labels; monospaced 11 pt uppercase with 0.6 tracking for metadata.
+- Motion: 160 ms feedback, 240 ms selection. Shared controls and indeterminate progress honor Reduce Motion.
 
 ## Components (`Sources/Views/Components.swift`)
 
-`MonoLabel`, `ControlStyle` (primary/secondary/quiet, hover lift, press scale), `IconButton`, `ToggleChip`, `FlowLayout`, `TabStrip` (sliding indicator), `card()`, `EditableTitle` (hover reveals field and pencil, orange focus ring), `SpeakerAvatar` (live level halo), `DotProgress`, `DotWaveform` (live level history, deep speaker tone at the center line fading to the light tone at the edges, as in the reference; idle shape in ember to orange), `InlineHint` (one-line hint with an optional action), `LogoMark` / `LogoGlyph` (shared by the menu-bar icon), `Shake` (refusal feedback).
+`MonoLabel`, `ControlStyle` (primary/secondary glass, borderless quiet, press and disabled feedback), `IconButton`, `ToggleChip`, `FlowLayout`, `TabStrip` (selected capsule), `card()` (opaque grouped content), `EditableTitle`, `SpeakerAvatar`, `DotProgress`, `DotWaveform`, `InlineHint`, `LogoMark` / `LogoGlyph`, `Shake`, `SwitchKnob`, `Segmented` and `KeyCaps`.
+
+`glassSurface()` uses the system's Liquid Glass on macOS 26 and later, including macOS 27. `GlassControls` groups related effects in one renderer. macOS 15 uses a standard material for secondary actions and solid orange for primary actions. Reduce Transparency or Increase Contrast uses opaque controls with stronger borders. `sidebarSurface()` and `popoverSurface()` use native `NSVisualEffectView` materials with the same opaque accessibility fallback. Avoid nested glass.
 
 ## Surfaces
 
 - **Logo:** `Sources/Views/LogoGlyph.swift` is the only definition: a 7×5 dot lattice with an orange waveform. `LogoMark` draws the mark in SwiftUI, the status item draws it as a template image, and `LogoGlyph.appIcon(size:)` draws the full macOS icon (Apple 1024 grid: 824 plate, 185.4 corners, baked shadow y 12 σ 16 30%; "Ember": top-lit orange plate with rim light; flat white dots, faint white lattice). `scripts/icon/generate.sh` renders `AppIcon` from it and the Credits pane shows the same image.
 - **Menu-bar icon:** glyph only, no text. Recording: columns follow live audio. Paused: the logo shape at 40% opacity. Transcribing: the waveform fills in from left to right with progress (a travelling ripple until progress is known).
-- **Panel (380 pt):** header with logo and ⋯ menu. Idle card: title, date, compact You/Colleagues source pills (shake when you try to turn both off). Live card: editable name, participant avatars with level halos, talk-time split bar, health hints (silent microphone, no Mac audio), the last three live transcript lines with speaker dots, 96 pt `NoteEditor` (multi-line, scrolls, 14 pt fades at top and bottom, orange focus ring). 66 pt waveform, timer, pause, start/stop. Recent meetings with an “All meetings ↗” button when idle. An update hint appears above the waveform when a new version is out.
-- **Library window:** collapsible (toolbar button, ⌃⌘S, remembered) 270 pt sidebar (logo, settings, start, search, rows with paper selection and dot progress), meeting detail with status, Copy/Export/⋯, editable title, date/duration/participants, Transcript / AI notes / My notes tabs.
+- **Panel (380 pt):** native popover material, SF header with the shared logo and glass More control. Ready/live content stays on an opaque card. You/Colleagues source pills have 34 pt targets and full single-line labels. The live card retains editable name, participant levels, talk-time split, health hints, live lines and notes. A 66 pt waveform leads to the timer and grouped glass recorder actions. Starting and saving use dot progress, not spinners. Recent meetings and the update hint remain available.
+- **Library window:** native unified toolbar with a sidebar button; ⌃⌘S and the remembered collapsed state remain. A 280 pt translucent sidebar contains logo, settings, start, search and orange-tinted selected rows. The detail stays opaque with status, grouped glass Copy/Export/More actions, editable title, date/duration/participants and Transcript / AI notes / My notes capsule tabs.
+- **Library row actions:** native `List` swipe tracking reveals a 36 pt red circular Trash button with a white glyph and no rectangular fill. Full swipes do not delete. The action opens the existing confirmation dialog; protected meetings have no swipe action.
 - **Transcript (`TranscriptViews.swift`):** a `ConversationMap` (two dot rows, You above Colleagues, orange playhead, click to play) and talk time head the transcript. Speaker turns: avatar and colored name with start time; a colored rail binds every line beneath; per-line timestamps seek playback; right-to-left lines align right; a mono language code per line when a meeting mixes languages; unsure lines in secondary color with a dotted underline; the line being played gets a soft speaker-colored background and stays in view. Right-click: Play from Here, Copy Line, Edit Line (in place, orange focus ring), Transcribe Again As. While transcribing or recording live, finished lines appear read-only under the progress.
-- **Player:** both sides together, speed 1× to 2×, slider, close.
+- **Player:** both tracks together, speed 1× to 2×, slider and close, on one inset glass surface with borderless inner controls.
 - **AI notes:** empty state with template picker and Analyze with AI; inline failure with Open Settings; loading; rendered notes with task checkboxes, re-analyze.
-- **Settings:** own sidebar (logo, orange selection), 540 pt content column of `SettingsSection` cards with `SettingsRow` / `SettingsToggle` (shared `SwitchKnob`), `Segmented` with sliding thumb, `KeyCaps`. Panes: General, Recording (reuses `SourcePicker`), Transcription (model cards with measured memory and a Recommended badge), AI Analysis, Storage, Credits (app icon, version, update states: check, up to date, available with notes and Install and Relaunch, installing, failed; automatic check toggle; links).
+- **Settings:** native titlebar and 208 pt translucent sidebar with orange selection, a named pane heading, neutral grouped background and opaque `SettingsSection` cards. `SettingsRow`, `SettingsToggle`, `SwitchKnob`, `Segmented` and `KeyCaps` remain shared. All six panes and update states remain. Model and template sheets share the same grouped surfaces and action controls.
 - **AI rename:** the renamed row cross-fades its title and glows orange with “Renamed by AI” for 2.5 s.
-- **Setup:** 580 pt window with step capsules: welcome, You (live microphone check), Colleagues (asks for Mac audio), speech model and languages (shared `SpeechModelList`, `LanguageChips`), optional OpenRouter key (shared `OpenRouterKeyField`), ready (notifications, login, updates, global shortcut). Skip and Back on every step.
+- **Setup:** 580 pt window with a quiet step header, opaque scrolling content and grouped glass footer actions. All six steps, Skip/Back behavior, permission actions and shared model/language/key fields remain.
