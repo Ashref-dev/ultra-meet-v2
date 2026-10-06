@@ -3,6 +3,7 @@ import SwiftUI
 
 struct AnalysisSettings: View {
     @ObservedObject var state: AppState
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var choosingModel = false
     @State private var editing: AnalysisTemplate?
     var body: some View {
@@ -35,11 +36,11 @@ struct AnalysisSettings: View {
     func templateRow(_ template: AnalysisTemplate) -> some View {
         let selected = template.id == state.preferences.template.id
         return HStack(spacing: 12) {
-            Button { withAnimation(Theme.feedback) { state.preferences.templateID = template.id } } label: {
+            Button { withAnimation(reduceMotion ? nil : Theme.feedback) { state.preferences.templateID = template.id } } label: {
                 HStack(spacing: 12) {
                     ZStack {
                         Circle().strokeBorder(selected ? Theme.orange : Theme.secondary.opacity(0.4), lineWidth: 1.5).frame(width: 16, height: 16)
-                        if selected { Circle().fill(Theme.orange).frame(width: 8, height: 8).transition(.scale) }
+                        if selected { Circle().fill(Theme.orange).frame(width: 8, height: 8).transition(reduceMotion ? .identity : .scale) }
                     }
                     VStack(alignment: .leading, spacing: 2) {
                         Text(template.name).font(.system(size: 13, weight: selected ? .semibold : .regular))
@@ -142,24 +143,32 @@ struct ModelCatalog: View {
     }
     var body: some View {
         VStack(spacing: 0) {
-            HStack {
-                Text("Choose a model").font(.system(size: 15, weight: .semibold))
+            HStack(spacing: 9) {
+                Image(systemName: "square.stack.3d.up")
+                    .font(.system(size: 15, weight: .medium))
+                    .symbolRenderingMode(.hierarchical)
+                    .foregroundStyle(Theme.orange)
+                Text("Choose a model").font(.system(size: 17, weight: .semibold))
                 Spacer()
                 MonoLabel(loading ? "Loading" : "\(filtered.count) models")
             }
-            .padding(.horizontal, 18).padding(.top, 16).padding(.bottom, 10)
+            .padding(.horizontal, 20).padding(.top, 18).padding(.bottom, 12)
             HStack(spacing: 7) {
                 Image(systemName: "magnifyingglass").foregroundStyle(Theme.secondary)
                 TextField("Search, e.g. claude, gemini flash, gpt", text: $query).textFieldStyle(.plain)
             }
-            .padding(.horizontal, 10).frame(height: 32)
+            .padding(.horizontal, 11).frame(height: Theme.controlHeight)
             .background(Theme.paper, in: RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous).strokeBorder(Theme.line))
-            .padding(.horizontal, 18).padding(.bottom, 10)
+            .padding(.horizontal, 20).padding(.bottom, 12)
             Divider()
             Group {
                 if loading {
-                    ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+                    VStack(spacing: 12) {
+                        DotProgress(value: nil, dots: 24).frame(width: 144, height: 6)
+                        Text("Loading models…").font(.system(size: 12)).foregroundStyle(Theme.secondary)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else if let failure {
                     VStack(spacing: 10) {
                         Text(failure).font(.system(size: 12)).foregroundStyle(Theme.secondary).multilineTextAlignment(.center)
@@ -184,17 +193,20 @@ struct ModelCatalog: View {
                         }.buttonStyle(.plain)
                     }
                     .listStyle(.inset)
+                    .scrollContentBackground(.hidden)
+                    .background(Theme.paper)
                 }
             }
             Divider()
-            HStack {
+            HStack(spacing: 12) {
                 caption("Prices from OpenRouter, per million tokens.")
                 Spacer()
                 Button("Done") { dismiss() }.buttonStyle(ControlStyle(compact: true)).keyboardShortcut(.cancelAction)
-            }.padding(14)
+            }
+            .padding(.horizontal, 20).padding(.vertical, 14)
         }
         .frame(width: 560, height: 520)
-        .background(Theme.background)
+        .background(Theme.background.ignoresSafeArea())
         .task { await load() }
     }
     func load() async {
@@ -210,9 +222,21 @@ struct TemplateEditor: View {
     @State var template: AnalysisTemplate
     @Environment(\.dismiss) private var dismiss
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("Analysis template").font(.system(size: 15, weight: .semibold))
-            TextField("Name", text: $template.name).textFieldStyle(.roundedBorder).font(.system(size: 13))
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(spacing: 9) {
+                Image(systemName: "text.badge.star")
+                    .font(.system(size: 15, weight: .medium))
+                    .symbolRenderingMode(.hierarchical)
+                    .foregroundStyle(Theme.orange)
+                Text("Analysis template").font(.system(size: 17, weight: .semibold))
+            }
+            TextField("Name", text: $template.name)
+                .textFieldStyle(.plain)
+                .font(.system(size: 13))
+                .padding(.horizontal, 11)
+                .frame(height: Theme.controlHeight)
+                .background(Theme.paper, in: RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous).strokeBorder(Theme.line))
             VStack(alignment: .leading, spacing: 6) {
                 MonoLabel("Instructions")
                 TextEditor(text: $template.prompt)
@@ -231,17 +255,21 @@ struct TemplateEditor: View {
                 .buttonStyle(ControlStyle(kind: .quiet, compact: true))
                 .disabled(state.preferences.templates.count <= 1 || !state.preferences.templates.contains { $0.id == template.id })
                 Spacer()
-                Button("Cancel") { dismiss() }.buttonStyle(ControlStyle(compact: true)).keyboardShortcut(.cancelAction)
-                Button("Save") {
-                    if let index = state.preferences.templates.firstIndex(where: { $0.id == template.id }) { state.preferences.templates[index] = template }
-                    else { state.preferences.templates.append(template) }
-                    dismiss()
+                GlassControls {
+                    HStack(spacing: 8) {
+                        Button("Cancel") { dismiss() }.buttonStyle(ControlStyle(compact: true)).keyboardShortcut(.cancelAction)
+                        Button("Save") {
+                            if let index = state.preferences.templates.firstIndex(where: { $0.id == template.id }) { state.preferences.templates[index] = template }
+                            else { state.preferences.templates.append(template) }
+                            dismiss()
+                        }
+                        .buttonStyle(ControlStyle(kind: .primary, compact: true)).keyboardShortcut(.defaultAction)
+                        .disabled(template.name.trimmingCharacters(in: .whitespaces).isEmpty || template.prompt.trimmingCharacters(in: .whitespaces).isEmpty)
+                    }
                 }
-                .buttonStyle(ControlStyle(kind: .primary, compact: true)).keyboardShortcut(.defaultAction)
-                .disabled(template.name.trimmingCharacters(in: .whitespaces).isEmpty || template.prompt.trimmingCharacters(in: .whitespaces).isEmpty)
             }
         }
-        .padding(20).frame(width: 480).background(Theme.background)
+        .padding(20).frame(width: 480).background(Theme.background.ignoresSafeArea())
     }
 }
 

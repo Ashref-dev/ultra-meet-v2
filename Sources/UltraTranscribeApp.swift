@@ -13,13 +13,14 @@ struct UltraTranscribeApp: App {
 }
 
 @MainActor
-final class ApplicationDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
+final class ApplicationDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate, NSToolbarDelegate {
     let state: AppState
     private var statusBar: StatusBarController?
     private var library: NSWindow?
     private var settings: NSWindow?
     private var setup: NSWindow?
     private var quitting = false
+    private static let sidebarItem = NSToolbarItem.Identifier("UltraTranscribe.ToggleSidebar")
 
     override init() {
         do { state = try AppState() }
@@ -112,11 +113,38 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, UNUserNotifica
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
         window.isReleasedWhenClosed = false
+        if autosave != "Setup" {
+            let toolbar = NSToolbar(identifier: autosave)
+            toolbar.delegate = self
+            toolbar.displayMode = .iconOnly
+            window.toolbar = toolbar
+            window.toolbarStyle = .unified
+        }
         window.contentViewController = NSHostingController(rootView: root)
         window.setContentSize(size)
         window.center()
         window.setFrameAutosaveName(autosave)
         return window
+    }
+    func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
+        toolbar.identifier == "Library" ? [Self.sidebarItem, .flexibleSpace] : [.flexibleSpace]
+    }
+    func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
+        toolbarDefaultItemIdentifiers(toolbar)
+    }
+    func toolbar(_ toolbar: NSToolbar, itemForItemIdentifier identifier: NSToolbarItem.Identifier, willBeInsertedIntoToolbar flag: Bool) -> NSToolbarItem? {
+        guard identifier == Self.sidebarItem else { return nil }
+        let item = NSToolbarItem(itemIdentifier: identifier)
+        item.label = "Toggle sidebar"
+        item.toolTip = "Show or hide the sidebar (⌃⌘S)"
+        item.image = NSImage(systemSymbolName: "sidebar.left", accessibilityDescription: "Toggle sidebar")
+        item.target = self
+        item.action = #selector(toggleSidebar)
+        return item
+    }
+    @objc private func toggleSidebar() {
+        let defaults = UserDefaults.standard
+        defaults.set(!defaults.bool(forKey: "sidebarCollapsed"), forKey: "sidebarCollapsed")
     }
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         guard !quitting, state.activeID != nil || state.isWorking || state.starting || state.analyzingID != nil else { return .terminateNow }

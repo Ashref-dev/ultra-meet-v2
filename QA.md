@@ -2,6 +2,67 @@
 
 What was verified for the current release, and how. Update this file with every release; say plainly what was not verified.
 
+## 0.6.3
+
+Environment: Apple Silicon, macOS 27, full Xcode, version 0.6.3 build 9.
+
+- Release build and strict signature verification passed.
+- Ran the built app under a separate QA bundle identifier and temporary home with one disposable meeting. Opened the library and exercised native horizontal scroll input without recording.
+- Inspected the actual AppKit trailing action: its non-template image is 36 × 36 pt, up from 28 × 28 pt; its background remains transparent. Captured and inspected its red circular image with the proportionally enlarged white Trash glyph.
+- The synthetic gesture did not leave the row fully revealed, so final on-row positioning was not visually reverified in this pass. Swipe tracking and deletion behavior are unchanged from 0.6.2.
+- README and in-app Help remain unchanged because usage is unchanged. No tests were added or rerun for this size-only adjustment.
+- Installed 0.6.3 (9) in Desktop and Applications, with old copies moved to the Finder Trash. Both installed signatures passed strict verification. The normal app reopened Meeting Library and reported Ready; temporary observation helpers were removed.
+
+## 0.6.2
+
+Environment: Apple Silicon, macOS 27, full Xcode, version 0.6.2 build 8. The built app ran under a separate QA bundle identifier and temporary home with disposable meetings. A failed recording setup entry appeared during the session and was retained in that isolated home; it has no audio or notes and reports that microphone access is off.
+
+Delivery: installed 0.6.2 (8) in `~/Desktop` and `~/Applications`, moving the previous copies to the Finder Trash. Both installed signatures passed strict verification. The normal app relaunched, opened Meeting Library and reported Ready. Temporary inspection helpers were removed.
+
+### Build and interface
+
+- Release compilation and `codesign --verify --deep --strict` passed.
+- Runtime inspection confirmed a native `SwiftUIOutlineListView` and trailing AppKit row action. The final action uses a non-template 28 pt circular image and a transparent background.
+- The settled, revealed action was captured in the real library window: a small red circle with a white Trash glyph, no rectangular red fill. Native action visibility was true and the button had its full, unclipped frame.
+- The visible circular button was activated through Accessibility and opened the existing confirmation dialog. Cancel retained the row and the meeting JSON's SHA-256 digest.
+- Confirming another disposable meeting removed only that row. Finder located its folder in the Trash, and the moved JSON retained its SHA-256 digest. The remaining meeting's digest was unchanged.
+- Real-window screenshots used a temporary in-process ScreenCaptureKit helper restricted to this app. No production screenshot or automation hook was added.
+- No Python changes or new tests. This UI change was exercised in the running app; the Swift test suite was not rerun.
+
+### Limits
+
+- Synthetic scroll events did not reliably complete a native swipe. The settled circular control was observed after a physical swipe, and its actual button and confirmation flow were then exercised through Accessibility.
+- Accessibility presses on the confirmation buttons returned an error while still applying the action. The resulting UI and file state were checked; a later Cancel check used an Accessibility-derived pointer target.
+- The QA app exited cleanly during the typed-search check, so search filtering was not verified in this pass.
+- macOS 15, accessibility motion/contrast overrides, live recording/transcription protection transitions, and large-library scrolling were not exercised. Recording, transcription and persistence formats are unchanged.
+
+## 0.6.1
+
+Environment: Apple Silicon, macOS 27, full Xcode selected through `DEVELOPER_DIR`. Interface smoke checks used the built app with `CFFIXED_USER_HOME` and a temporary library containing an English/Arabic transcript. Automation did not start recording or invoke a permission prompt.
+
+### Build
+
+- Release compilation and `codesign --verify --deep --strict` passed.
+- The first integration build exposed an incorrect `NSToolbar.Identifier` assumption; it is a String. The corrected native toolbar compiled.
+- Repeat bundling exposed Homebrew's read-only `uv` permissions. `install -m 755` now replaces the bundled runtime; the next bundle and signature check passed.
+- No new tests or Python changes. This visual update was exercised through the running app, not screenshot assertions or source-text tests.
+
+### Used through the real interface
+
+- Recorder popover: native glass actions, source pills, idle waveform, model-install action and recent meeting row.
+- Settings: General in Light and Dark, segmented appearance selection, selected navigation, grouped cards and switches. A loaded model catalog sheet was also captured.
+- Library: native toolbar sidebar button hides and restores the meeting list. Transcript, AI notes empty state and My notes were opened. English and right-aligned Arabic stayed on an opaque reading surface; the missing-audio notice remained visible.
+- Setup: reopened the Welcome page through Run Again. The card, title, footer controls and shared icon fit the window; no permission action was invoked.
+- Real-window screenshots were captured with a temporary in-process ScreenCaptureKit helper restricted to the app's own windows. Ordinary external screenshot capture had no Screen Recording access. No system privacy setting was changed.
+- Initial screenshots caught a wrapped Colleagues label and a system-blue model-install link. The rebuilt app's final recorder screenshot confirmed the full label and orange link. Turning off You and then attempting to turn off Colleagues kept the last source enabled (`source: system`); You was then restored.
+- A recording created manually during the preview was copied to the normal library before leaving the temporary session. Both its audio and metadata were byte-compared after copying.
+
+### Not verified
+
+- macOS 15 fallback appearance and runtime accessibility overrides for Reduce Transparency, Increase Contrast and Reduce Motion.
+- Live recording, pause, start/save transitions, waveform activity, playback and transcription after this visual update. Audio behavior was not changed or re-measured.
+- Every setup permission/download step, analysis submission, update installation, and template editing.
+
 ## 0.6.0
 
 Environment: Apple Silicon, 24 GB memory. App built with `scripts/build.sh`, signed with Apple Development. This release was verified in code, with automated tests, with the transcription worker on real and synthetic audio, and (build 6) by driving the built app through Accessibility with screenshots.

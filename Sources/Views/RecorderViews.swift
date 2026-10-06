@@ -6,38 +6,50 @@ struct RecorderControls: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var recording: Bool { state.activeID != nil }
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 10) {
             Text(Meeting.timestamp(recording ? state.elapsed : 0))
                 .font(.system(size: 13, weight: .medium, design: .monospaced)).monospacedDigit()
                 .foregroundStyle(recording && !state.recorder.paused ? Color.primary : Theme.secondary)
                 .contentTransition(.numericText())
                 .accessibilityLabel("Elapsed time \(Meeting.timestamp(state.elapsed))")
             Spacer(minLength: 12)
-            if recording {
-                IconButton(symbol: state.recorder.paused ? "play.fill" : "pause.fill", label: state.recorder.paused ? "Resume recording" : "Pause recording") { state.togglePause() }
-                    .disabled(state.stopping)
-                Button { state.stopRecording() } label: {
-                    HStack(spacing: 8) {
-                        if state.stopping { ProgressView().controlSize(.mini).tint(.white) } else { RoundedRectangle(cornerRadius: 1.5).fill(.white).frame(width: 8, height: 8) }
-                        Text(state.stopping ? "Saving" : "Stop")
+            GlassControls {
+                HStack(spacing: 8) {
+                    if recording {
+                        IconButton(symbol: state.recorder.paused ? "play.fill" : "pause.fill", label: state.recorder.paused ? "Resume recording" : "Pause recording") { state.togglePause() }
+                            .disabled(state.stopping)
+                        Button { state.stopRecording() } label: {
+                            HStack(spacing: 8) {
+                                if state.stopping {
+                                    DotProgress(value: nil, dots: 4, color: .white).frame(width: 22, height: 5)
+                                } else {
+                                    RoundedRectangle(cornerRadius: 1.5).fill(.white).frame(width: 8, height: 8)
+                                }
+                                Text(state.stopping ? "Saving" : "Stop")
+                            }
+                        }
+                        .buttonStyle(ControlStyle(kind: .primary))
+                        .disabled(state.stopping)
+                        .help("Stop and transcribe (⌘⇧S)")
+                        .transition(.opacity)
+                    } else {
+                        Button { state.startRecording() } label: {
+                            HStack(spacing: 8) {
+                                if state.starting {
+                                    DotProgress(value: nil, dots: 4, color: .white).frame(width: 22, height: 5)
+                                } else {
+                                    Circle().fill(.white).frame(width: 7, height: 7)
+                                }
+                                Text(state.starting ? "Starting" : "Start recording")
+                            }
+                        }
+                        .buttonStyle(ControlStyle(kind: .primary))
+                        .keyboardShortcut(.defaultAction)
+                        .disabled(!state.canStart)
+                        .help("Start recording now (⌘N)")
+                        .transition(.opacity)
                     }
                 }
-                .buttonStyle(ControlStyle(kind: .primary))
-                .disabled(state.stopping)
-                .help("Stop and transcribe (⌘⇧S)")
-                .transition(.opacity)
-            } else {
-                Button { state.startRecording() } label: {
-                    HStack(spacing: 8) {
-                        if state.starting { ProgressView().controlSize(.mini).tint(.white) } else { Circle().fill(.white).frame(width: 7, height: 7) }
-                        Text(state.starting ? "Starting" : "Start recording")
-                    }
-                }
-                .buttonStyle(ControlStyle(kind: .primary))
-                .keyboardShortcut(.defaultAction)
-                .disabled(!state.canStart)
-                .help("Start recording now (⌘N)")
-                .transition(.opacity)
             }
         }
         .animation(reduceMotion ? nil : Theme.feedback, value: recording)
@@ -98,13 +110,14 @@ struct MeetingRow: View {
 /// Who gets recorded: You (microphone) and Colleagues (Mac audio). Refuses, with a shake, to turn both off.
 struct SourcePicker: View {
     @ObservedObject var state: AppState
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var refused: CGFloat = 0
     var body: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 8) {
             SourcePill(title: "You", detail: "Microphone", symbol: "mic.fill", color: Theme.you, isOn: binding(microphone: true))
             SourcePill(title: "Colleagues", detail: "Mac audio", symbol: "speaker.wave.2.fill", color: Theme.colleagues, isOn: binding(microphone: false))
         }
-        .modifier(Shake(animatableData: refused))
+        .modifier(Shake(animatableData: reduceMotion ? 0 : refused))
     }
     func binding(microphone: Bool) -> Binding<Bool> {
         let source = state.preferences.source
@@ -112,7 +125,10 @@ struct SourcePicker: View {
             get: { microphone ? source.usesMicrophone : source.usesSystemAudio },
             set: { value in
                 let next = microphone ? AudioSource.from(microphone: value, system: source.usesSystemAudio) : AudioSource.from(microphone: source.usesMicrophone, system: value)
-                guard let next else { withAnimation(.linear(duration: 0.35)) { refused += 1 }; return }
+                guard let next else {
+                    if reduceMotion { refused += 1 } else { withAnimation(.linear(duration: 0.35)) { refused += 1 } }
+                    return
+                }
                 state.preferences.source = next
                 state.savePreferences()
             })
@@ -126,25 +142,31 @@ struct SourcePill: View {
     let symbol: String
     let color: Color
     @Binding var isOn: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var hovering = false
     var body: some View {
-        Button { withAnimation(Theme.feedback) { isOn.toggle() } } label: {
-            HStack(spacing: 7) {
-                Image(systemName: symbol).font(.system(size: 8.5, weight: .bold))
+        Button {
+            if reduceMotion { isOn.toggle() } else { withAnimation(Theme.feedback) { isOn.toggle() } }
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: symbol).font(.system(size: 9, weight: .bold))
                     .foregroundStyle(isOn ? .white : Theme.secondary)
-                    .frame(width: 18, height: 18)
+                    .frame(width: 20, height: 20)
                     .background(isOn ? color : Theme.line, in: Circle())
                 Text(title).font(.system(size: 12, weight: .semibold)).foregroundStyle(isOn ? Color.primary : Theme.secondary)
+                    .lineLimit(1).fixedSize(horizontal: true, vertical: false)
+                Spacer(minLength: 0)
                 SwitchKnob(isOn: isOn, color: color)
             }
-            .padding(.leading, 5).padding(.trailing, 7).frame(height: 28)
-            .background(isOn ? color.opacity(0.08) : hovering ? Theme.line.opacity(0.4) : .clear, in: RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous).strokeBorder(isOn ? color.opacity(hovering ? 0.6 : 0.3) : Theme.line))
+            .padding(.horizontal, 7)
+            .frame(maxWidth: .infinity, minHeight: Theme.controlHeight)
+            .background(isOn ? color.opacity(0.07) : hovering ? Theme.line.opacity(0.32) : .clear, in: RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous).strokeBorder(isOn ? color.opacity(hovering ? 0.5 : 0.26) : Theme.line))
             .contentShape(Rectangle())
         }
         .buttonStyle(PressStyle())
         .onHover { hovering = $0 }
-        .animation(Theme.feedback, value: hovering)
+        .animation(reduceMotion ? nil : Theme.feedback, value: hovering)
         .help(isOn ? "\(title) (\(detail)) will be recorded. Click to turn off." : "Click to record \(title.lowercased()) (\(detail)).")
         .accessibilityLabel("\(title), \(detail)")
         .accessibilityValue(isOn ? "Recorded" : "Not recorded")

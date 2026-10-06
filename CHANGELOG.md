@@ -2,6 +2,23 @@
 
 All notable changes are listed here. Versions follow [Semantic Versioning](https://semver.org): `0.x` releases may still change behavior between minor versions.
 
+## 0.6.3 · 2026-10-05
+
+- Enlarge the circular library Trash action from 28 pt to 36 pt to match the larger reference. Keep native swipe tracking and confirmation behavior unchanged.
+
+## 0.6.2 · 2026-10-05
+
+- Swipe left on a library meeting to reveal a small circular red Trash button using native macOS swipe tracking.
+- Keep the confirmation dialog, recording and processing protection, and recovery through the Finder Trash. A full swipe alone does not delete a meeting.
+
+## 0.6.1 · 2026-10-05
+
+- Adopt native macOS 27 styling across the recorder, library, settings and setup: Liquid Glass actions, translucent navigation, rounded grouped cards and sentence-case controls. Transcripts and notes stay on opaque reading surfaces.
+- Move the library sidebar toggle into a native unified toolbar. Keep orange selection, the existing logo, speaker colors and keyboard shortcuts.
+- Honor Reduce Transparency and Increase Contrast with opaque controls, and Reduce Motion in shared controls and progress. Keep macOS 15 compatibility through standard material fallbacks.
+- Replace loading spinners in the recorder and model catalog with dot progress.
+- Fix repeat builds when Homebrew's bundled `uv` executable is read-only.
+
 ## 0.6.0 · 2026-10-05
 
 Recognition you can trust in mixed-language meetings, clean call audio, live transcripts, and update management.
