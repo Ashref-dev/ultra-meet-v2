@@ -196,9 +196,10 @@ struct EditableTitle: View {
     @State private var hovering = false
     @FocusState private var focused: Bool
     var body: some View {
-        HStack(spacing: 8) {
-            TextField("Meeting name", text: Binding(get: { title }, set: rename))
-                .textFieldStyle(.plain)
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            // Wraps instead of clipping long AI titles; Return still finishes the rename.
+            TextField("Meeting name", text: Binding(get: { title }, set: rename), axis: .vertical)
+                .textFieldStyle(.plain).lineLimit(1...3)
                 .font(.system(size: size, weight: .semibold)).tracking(size > 20 ? -0.5 : -0.3)
                 .focused($focused)
                 .onSubmit { focused = false }

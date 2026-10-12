@@ -49,15 +49,29 @@ struct MeetingRow: View {
     @ObservedObject var state: AppState
     let meeting: Meeting
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        // The title gets the full width and two lines, since AI titles carry the meeting's topic; the duration
+        // sits at the end of the metadata line, so durations still read as one column down the list.
+        VStack(alignment: .leading, spacing: 5) {
+            Text(meeting.title).font(.system(size: 13, weight: .medium)).lineSpacing(1)
+                .lineLimit(2).truncationMode(.tail).fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentTransition(.opacity)
+                .animation(.easeInOut(duration: 0.35), value: meeting.title)
+                .help(meeting.title)
             HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(meeting.title).font(.system(size: 13, weight: .medium)).lineLimit(1).truncationMode(.tail)
-                    .contentTransition(.opacity)
-                    .animation(.easeInOut(duration: 0.35), value: meeting.title)
+                status
                 Spacer(minLength: 4)
                 Text(Meeting.timestamp(meeting.id == state.activeID ? state.elapsed : meeting.duration))
                     .font(Theme.mono).foregroundStyle(Theme.secondary).monospacedDigit()
             }
+        }
+        .contentShape(Rectangle())
+        .padding(.horizontal, 4).padding(.vertical, 3)
+        .background(Theme.orange.opacity(state.renamedID == meeting.id ? 0.09 : 0), in: RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous))
+        .padding(.horizontal, -4).padding(.vertical, -3)
+        .animation(.easeInOut(duration: 0.4), value: state.renamedID)
+    }
+    @ViewBuilder var status: some View {
             if meeting.id == state.processingID {
                 HStack(spacing: 8) {
                     DotProgress(value: state.engine.fraction, dots: 24).frame(width: 120, height: 5)
@@ -79,12 +93,6 @@ struct MeetingRow: View {
                     }
                 }
             }
-        }
-        .contentShape(Rectangle())
-        .padding(.horizontal, 4).padding(.vertical, 3)
-        .background(Theme.orange.opacity(state.renamedID == meeting.id ? 0.09 : 0), in: RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous))
-        .padding(.horizontal, -4).padding(.vertical, -3)
-        .animation(.easeInOut(duration: 0.4), value: state.renamedID)
     }
     var activity: String? {
         if meeting.id == state.activeID { return state.recorder.paused ? "Paused" : "Recording" }
