@@ -2,7 +2,7 @@
 
 All notable changes are listed here. Versions follow [Semantic Versioning](https://semver.org): `0.x` releases may still change behavior between minor versions.
 
-## Unreleased
+## 0.6.1 · 2026-10-12
 
 - Meeting names in the sidebar and menu-bar panel get the full row width and wrap to two lines; the duration moved to the end of the date line. Long titles in a meeting's header wrap instead of being cut off.
 

@@ -2,6 +2,10 @@
 
 What was verified for the current release, and how. Update this file with every release; say plainly what was not verified.
 
+## 0.6.1
+
+Checked in the built app: the library sidebar shows full AI titles on two lines with durations aligned at the right of the date line, short titles stay on one line, and a long title in the meeting header wraps. `swift test`: 47 pass.
+
 ## 0.6.0
 
 Environment: Apple Silicon, 24 GB memory. App built with `scripts/build.sh`, signed with Apple Development. This release was verified in code, with automated tests, with the transcription worker on real and synthetic audio, and (build 6) by driving the built app through Accessibility with screenshots.
