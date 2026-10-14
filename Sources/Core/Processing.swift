@@ -5,10 +5,18 @@ import Foundation
 struct TermSuggestion: Equatable { let meetingID: UUID; let terms: [String] }
 
 extension AppState {
-    func installModels() async {
-        do { try await engine.setup(model: preferences.model) }
+    func install(_ model: ASRModel) async {
+        do { try await engine.setup(model: model) }
         catch is CancellationError { }
         catch { self.error = error.localizedDescription }
+    }
+    func deleteModel(_ model: ASRModel) {
+        do { try engine.delete(model) }
+        catch { self.error = error.localizedDescription }
+    }
+    /// The model a meeting was transcribed with while it is still installed, so redoing it stays consistent.
+    func speechModel(for meeting: Meeting) -> ASRModel {
+        engine.ready(meeting.model) ? meeting.model : preferences.model
     }
     /// Queues local transcription. Recording a new meeting never waits for this.
     func transcribe(_ id: UUID) {
@@ -35,7 +43,7 @@ extension AppState {
         guard processingID == nil, liveID == nil, !engine.busy, let meeting = meetings.first(where: { $0.id == id }) else { return }
         if requested && !live && queued.contains(id) { return }
         var configuration = preferences
-        configuration.model = engine.ready(meeting.model) ? meeting.model : preferences.model
+        configuration.model = speechModel(for: meeting)
         guard engine.ready(configuration.model) else {
             if !live { update(id) { $0.status = .interrupted; $0.error = "Your recording is saved. Download the speech model in Settings → Transcription, then choose Transcribe Again." } }
             return
@@ -84,7 +92,7 @@ extension AppState {
             return
         }
         var configuration = preferences
-        configuration.model = engine.ready(meeting.model) ? meeting.model : preferences.model
+        configuration.model = speechModel(for: meeting)
         guard engine.ready(configuration.model) else {
             error = "Download the speech model in Settings → Transcription first."
             return

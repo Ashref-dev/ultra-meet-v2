@@ -70,6 +70,29 @@ final class LibraryTests: XCTestCase {
         XCTAssertFalse(LocalEngine(root: root).runtimeReady)
     }
 
+    @MainActor
+    func testDeletingAModelRemovesOnlyThatModel() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let bin = root.appendingPathComponent("Runtime/bin")
+        try FileManager.default.createDirectory(at: bin, withIntermediateDirectories: true)
+        try Data("#!/bin/sh\n".utf8).write(to: bin.appendingPathComponent("python"))
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: bin.appendingPathComponent("python").path)
+        let resources = try XCTUnwrap(Bundle.module.url(forResource: "runtime-requirements", withExtension: "txt", subdirectory: "Resources"))
+        try Data(contentsOf: resources).write(to: root.appendingPathComponent("Runtime/.ready"))
+        for model in [ASRModel.small, .whisperTurbo] {
+            let folder = root.appendingPathComponent("Models/\(model.rawValue)")
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            try Data().write(to: folder.appendingPathComponent(".ready"))
+        }
+        let engine = LocalEngine(root: root)
+        XCTAssertEqual(engine.installed, [.small, .whisperTurbo])
+        try engine.delete(.whisperTurbo)
+        XCTAssertEqual(engine.installed, [.small])
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("Models/whisper-turbo").path))
+        XCTAssertTrue(engine.ready(.small))
+    }
+
     func testMalformedMeetingDoesNotHideHealthyMeeting() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }

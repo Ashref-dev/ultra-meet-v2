@@ -19,6 +19,26 @@ final class MenuBarWorkflowTests: XCTestCase {
         XCTAssertEqual(try JSONDecoder().decode(Preferences.self, from: JSONEncoder().encode(chosen)).languages, ["English", "Arabic"])
     }
 
+    func testEachModelGetsOnlyTheLanguagesItCanUse() throws {
+        var preferences = Preferences()
+        preferences.languages = ["Turkish", "Arabic", "French"]
+        preferences.model = .best
+        XCTAssertEqual(preferences.spokenLanguages, ["Turkish", "Arabic", "French"])
+        preferences.model = .cohere
+        XCTAssertEqual(preferences.spokenLanguages, ["Arabic"], "one-language models use the first chosen language they support")
+        preferences.model = .parakeet
+        XCTAssertEqual(preferences.spokenLanguages, [], "models that detect the language get none")
+        preferences.model = .whisperTurbo
+        preferences.languages = ["Filipino", "French"]
+        XCTAssertEqual(preferences.spokenLanguages, ["French"])
+        let saved = try JSONDecoder().decode(Preferences.self, from: Data(#"{"model":"cohere-arabic","languages":["English","Arabic"]}"#.utf8))
+        XCTAssertEqual(saved.model, .cohereArabic)
+        XCTAssertEqual(saved.spokenLanguages, ["English"])
+        let unknown = try JSONDecoder().decode(Preferences.self, from: Data(#"{"model":"a-future-model","languages":["Arabic"]}"#.utf8))
+        XCTAssertEqual(unknown.model, Preferences().model, "an unknown model falls back to the default instead of resetting preferences")
+        XCTAssertEqual(unknown.languages, ["Arabic"])
+    }
+
     func testAnalysisTitleFormatsFromDifferentModels() {
         XCTAssertEqual(MeetingAnalysis.parse("## Q4 pricing review\n## Summary\nOk").title, "Q4 pricing review")
         XCTAssertEqual(MeetingAnalysis.parse("Title: Launch checklist\n\n## Summary").title, "Launch checklist")

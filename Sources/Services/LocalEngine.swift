@@ -23,16 +23,25 @@ final class LocalEngine: ObservableObject {
               let required = try? Data(contentsOf: resource("runtime-requirements.txt")) else { return false }
         return installed == required
     }
-    init(root: URL) { self.root = root }
-    func ready(_ model: ASRModel) -> Bool {
-        runtimeReady && FileManager.default.fileExists(atPath: models.appendingPathComponent("\(model.rawValue)/.ready").path)
+    /// Downloaded models, read from disk at launch and after each download or deletion so views never touch the disk.
+    @Published private(set) var installed: Set<ASRModel> = []
+    @Published private(set) var downloading: ASRModel?
+    init(root: URL) {
+        self.root = root
+        refreshInstalled()
+    }
+    func ready(_ model: ASRModel) -> Bool { installed.contains(model) }
+    private func folder(_ model: ASRModel) -> URL { models.appendingPathComponent(model.rawValue) }
+    private func refreshInstalled() {
+        installed = runtimeReady ? Set(ASRModel.allCases.filter { FileManager.default.fileExists(atPath: folder($0).appendingPathComponent(".ready").path) }) : []
     }
     func setup(model: ASRModel) async throws {
         try Task.checkCancellation()
         cancellationRequested = false
         guard !busy else { throw AppError.message("A local model task is already running.") }
         busy = true
-        defer { busy = false }
+        downloading = model
+        defer { busy = false; downloading = nil; refreshInstalled() }
         if !runtimeReady {
             message = "Installing the local Apple Silicon runtime…"
             let uv = Bundle.main.resourceURL!.appendingPathComponent("uv")
@@ -44,6 +53,18 @@ final class LocalEngine: ObservableObject {
         }
         try await worker(["download", models.path, "--model", model.rawValue], progressFolder: models)
     }
+    /// Removes a downloaded model to free its disk space. Models are public downloads, so they skip the Trash.
+    func delete(_ model: ASRModel) throws {
+        guard !busy else { throw AppError.message("Wait for the current transcription or download to finish, then delete the model.") }
+        defer { refreshInstalled() }
+        try FileManager.default.removeItem(at: folder(model))
+    }
+    private func spoken(_ preferences: Preferences) throws -> String {
+        guard preferences.model.languageMode != .one || !preferences.spokenLanguages.isEmpty else {
+            throw AppError.message("\(preferences.model.name) transcribes one language. Choose it in Settings → Transcription, then choose Transcribe Again.")
+        }
+        return preferences.spokenLanguages.joined(separator: ",")
+    }
     /// `live` follows a recording that is still being written, until `finish(folder:)`.
     func transcribe(folder: URL, preferences: Preferences, live: Bool = false) async throws -> [TranscriptSegment] {
         try Task.checkCancellation()
@@ -51,7 +72,7 @@ final class LocalEngine: ObservableObject {
         busy = true
         defer { busy = false }
         try? FileManager.default.removeItem(at: folder.appendingPathComponent(Self.finishFile))
-        try await worker(["transcribe", folder.path, models.path, "--model", preferences.model.rawValue, "--languages", preferences.languages.joined(separator: ","), "--vocabulary", preferences.vocabulary] + (live ? ["--follow"] : []), progressFolder: folder)
+        try await worker(["transcribe", folder.path, models.path, "--model", preferences.model.rawValue, "--languages", try spoken(preferences), "--vocabulary", preferences.vocabulary] + (live ? ["--follow"] : []), progressFolder: folder)
         return try JSONDecoder().decode(WorkerTranscript.self, from: Data(contentsOf: folder.appendingPathComponent("transcript.json"))).segments
     }
     /// Tells a live transcription that the recording's files are complete.
@@ -67,7 +88,7 @@ final class LocalEngine: ObservableObject {
         defer { busy = false }
         let output = folder.appendingPathComponent("line.json")
         try? FileManager.default.removeItem(at: output)
-        try await worker(["line", folder.path, models.path, "--source", line.source, "--start", String(line.start), "--end", String(line.end), "--model", preferences.model.rawValue, "--language", language ?? "", "--languages", preferences.languages.joined(separator: ","), "--vocabulary", preferences.vocabulary], progressFolder: folder)
+        try await worker(["line", folder.path, models.path, "--source", line.source, "--start", String(line.start), "--end", String(line.end), "--model", preferences.model.rawValue, "--language", language ?? "", "--languages", try spoken(preferences), "--vocabulary", preferences.vocabulary], progressFolder: folder)
         var result = try JSONDecoder().decode(TranscriptSegment.self, from: Data(contentsOf: output))
         try? FileManager.default.removeItem(at: output)
         result.id = line.id

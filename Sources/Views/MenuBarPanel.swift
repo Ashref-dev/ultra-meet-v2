@@ -96,7 +96,6 @@ struct MenuBarPanel: View {
 private struct ReadyCard: View {
     @ObservedObject var state: AppState
     /// `LocalEngine.ready` reads files, so it is checked on open and when an install starts or ends, not every render.
-    @State private var modelMissing = false
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .firstTextBaseline) {
@@ -105,18 +104,14 @@ private struct ReadyCard: View {
                 MonoLabel(Date().formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated)))
             }
             SourcePicker(state: state)
-            if modelMissing && !state.engine.busy {
+            if !state.engine.ready(state.preferences.model) && !state.engine.busy {
                 Button { state.showSettings(.transcription) } label: {
                     Label("Install the speech model to get transcripts", systemImage: "arrow.down.circle").font(.system(size: 11.5))
                 }
                 .buttonStyle(PressStyle()).foregroundStyle(Theme.orange)
             }
         }
-        .onAppear(perform: checkModel)
-        .onChange(of: state.engine.busy) { _, _ in checkModel() }
-        .onChange(of: state.preferences.model) { _, _ in checkModel() }
     }
-    func checkModel() { modelMissing = !state.engine.ready(state.preferences.model) }
 }
 
 /// Live card: name, participants, talk share and a quick note.

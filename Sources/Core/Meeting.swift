@@ -22,45 +22,58 @@ enum AudioSource: String, Codable, CaseIterable, Identifiable {
         }
     }
 }
+enum LanguageMode {
+    /// Recognizes each sentence as one of the chosen languages; none chosen detects any it knows.
+    case several
+    /// Transcribes everything in one chosen language.
+    case one
+    /// Detects the language by itself; the choice doesn't apply.
+    case automatic
+}
+
+/// Local speech models. Raw values name the model folder and are stored in preferences and meetings; never rename one.
 enum ASRModel: String, Codable, CaseIterable, Identifiable {
-    case small, large, best
+    case best, large, small
+    case whisperTurbo = "whisper-turbo", cohere, cohereArabic = "cohere-arabic", parakeet, granite, voxtral
     var id: String { rawValue }
-    var label: String {
+
+    private struct Spec {
+        let name: String
+        let maker: String
+        let size: String
+        /// Peak memory footprint and wall time for the 1-minute synthetic meeting in `scripts/eval`, model load included.
+        let memoryGB: Double
+        let minuteSeconds: Int
+        let mode: LanguageMode
+        let languages: [String]
+    }
+    private var spec: Spec {
         switch self {
-        case .small: return "Fast · Qwen3-ASR 0.6B"
-        case .large: return "Balanced · Qwen3-ASR 1.7B 8-bit"
-        case .best: return "Best · Qwen3-ASR 1.7B full precision"
+        case .best: return Spec(name: "Best", maker: "Qwen3-ASR 1.7B", size: "4.1 GB", memoryGB: 5.5, minuteSeconds: 12, mode: .several, languages: Self.qwen)
+        case .large: return Spec(name: "Balanced", maker: "Qwen3-ASR 1.7B, 8-bit", size: "2.3 GB", memoryGB: 3.9, minuteSeconds: 9, mode: .several, languages: Self.qwen)
+        case .small: return Spec(name: "Fast", maker: "Qwen3-ASR 0.6B", size: "1 GB", memoryGB: 2.2, minuteSeconds: 6, mode: .several, languages: Self.qwen)
+        case .whisperTurbo: return Spec(name: "Whisper Large v3 Turbo", maker: "OpenAI", size: "1.6 GB", memoryGB: 2.9, minuteSeconds: 24, mode: .several, languages: Self.whisper)
+        case .cohere: return Spec(name: "Cohere Transcribe", maker: "Cohere", size: "2.4 GB", memoryGB: 3.5, minuteSeconds: 15, mode: .one, languages: ["English", "Arabic", "French", "Spanish", "German", "Italian", "Portuguese", "Dutch", "Polish", "Greek", "Chinese", "Japanese", "Korean", "Vietnamese"])
+        case .cohereArabic: return Spec(name: "Cohere Transcribe Arabic", maker: "Cohere", size: "2.4 GB", memoryGB: 3.1, minuteSeconds: 8, mode: .one, languages: ["Arabic", "English"])
+        case .parakeet: return Spec(name: "Parakeet TDT v3", maker: "NVIDIA", size: "2.5 GB", memoryGB: 3.0, minuteSeconds: 10, mode: .automatic, languages: ["English", "French", "Spanish", "German", "Italian", "Portuguese", "Dutch", "Polish", "Russian", "Ukrainian", "Swedish", "Danish", "Finnish", "Greek", "Czech", "Slovak", "Slovenian", "Croatian", "Bulgarian", "Romanian", "Hungarian", "Estonian", "Latvian", "Lithuanian", "Maltese"])
+        case .granite: return Spec(name: "Granite Speech 4.0", maker: "IBM", size: "2.9 GB", memoryGB: 3.5, minuteSeconds: 15, mode: .automatic, languages: ["English", "French", "German", "Spanish", "Portuguese", "Japanese"])
+        case .voxtral: return Spec(name: "Voxtral Mini Realtime", maker: "Mistral", size: "3.2 GB", memoryGB: 4.0, minuteSeconds: 20, mode: .automatic, languages: ["English", "Arabic", "French", "Spanish", "German", "Italian", "Portuguese", "Dutch", "Russian", "Hindi", "Chinese", "Japanese", "Korean"])
         }
     }
-    /// "Fast", "Balanced" or "Best": the name people pick it by.
-    var shortLabel: String { label.components(separatedBy: " · ")[0] }
-    /// Peak memory while transcribing, measured on Apple Silicon with 2 minutes of meeting audio.
-    var memoryGB: Double {
-        switch self {
-        case .small: return 1.9
-        case .large: return 3.5
-        case .best: return 5.0
-        }
-    }
-    /// Measured transcription speed, as a multiple of real time.
-    var speed: Int {
-        switch self {
-        case .small: return 85
-        case .large: return 40
-        case .best: return 27
-        }
-    }
+    var name: String { spec.name }
+    var maker: String { spec.maker }
+    var size: String { spec.size }
+    var memoryGB: Double { spec.memoryGB }
+    var minuteSeconds: Int { spec.minuteSeconds }
+    var languageMode: LanguageMode { spec.mode }
+    var languages: [String] { spec.languages }
+
     static func recommended(forMemory bytes: UInt64) -> ASRModel {
         let gigabytes = Double(bytes) / 1_073_741_824
         return gigabytes < 12 ? .small : gigabytes < 16 ? .large : .best
     }
-    var size: String {
-        switch self {
-        case .small: return "1 GB"
-        case .large: return "2.3 GB"
-        case .best: return "4.1 GB"
-        }
-    }
+    private static let qwen = ["English", "Arabic", "French", "Spanish", "German", "Italian", "Portuguese", "Dutch", "Turkish", "Russian", "Hindi", "Persian", "Chinese", "Cantonese", "Japanese", "Korean", "Indonesian", "Malay", "Thai", "Vietnamese", "Filipino", "Swedish", "Danish", "Finnish", "Polish", "Czech", "Greek", "Romanian", "Hungarian", "Macedonian"]
+    private static let whisper = ["English", "Arabic", "French", "Spanish", "German", "Italian", "Portuguese", "Dutch", "Turkish", "Russian", "Hindi", "Persian", "Chinese", "Cantonese", "Japanese", "Korean", "Indonesian", "Malay", "Thai", "Vietnamese", "Tagalog", "Swedish", "Danish", "Finnish", "Polish", "Czech", "Greek", "Romanian", "Hungarian", "Macedonian", "Catalan", "Hebrew", "Ukrainian", "Tamil", "Norwegian", "Urdu", "Croatian", "Bulgarian", "Lithuanian", "Latin", "Maori", "Malayalam", "Welsh", "Slovak", "Telugu", "Latvian", "Bengali", "Serbian", "Azerbaijani", "Slovenian", "Kannada", "Estonian", "Breton", "Basque", "Icelandic", "Armenian", "Nepali", "Mongolian", "Bosnian", "Kazakh", "Albanian", "Swahili", "Galician", "Marathi", "Punjabi", "Sinhala", "Khmer", "Shona", "Yoruba", "Somali", "Afrikaans", "Occitan", "Georgian", "Belarusian", "Tajik", "Sindhi", "Gujarati", "Amharic", "Yiddish", "Lao", "Uzbek", "Faroese", "Haitian Creole", "Pashto", "Turkmen", "Nynorsk", "Maltese", "Sanskrit", "Luxembourgish", "Myanmar", "Tibetan", "Malagasy", "Assamese", "Tatar", "Hawaiian", "Lingala", "Hausa", "Bashkir", "Javanese", "Sundanese"]
 }
 struct TranscriptSegment: Codable, Identifiable, Equatable {
     var id: UUID = UUID()
@@ -186,7 +199,7 @@ struct Preferences: Codable, Equatable {
     var retentionDays = 7
     var launchAtLogin = false
     var appearance = "system"
-    /// Languages people speak in meetings. Empty: detect any of Qwen3-ASR's 30 languages.
+    /// Languages people speak in meetings, in order of choice. Each model uses the ones it supports: see `spokenLanguages`.
     var languages: [String] = []
     var vocabulary = ""
     var openRouterModel = "google/gemini-2.5-flash"
@@ -202,7 +215,16 @@ struct Preferences: Codable, Equatable {
     var setupDone = false
 
     var template: AnalysisTemplate { templates.first { $0.id == templateID } ?? templates.first ?? AnalysisTemplate.defaults[0] }
-    static let supportedLanguages = ["English", "Arabic", "French", "Spanish", "German", "Italian", "Portuguese", "Dutch", "Turkish", "Russian", "Hindi", "Persian", "Chinese", "Cantonese", "Japanese", "Korean", "Indonesian", "Malay", "Thai", "Vietnamese", "Filipino", "Swedish", "Danish", "Finnish", "Polish", "Czech", "Greek", "Romanian", "Hungarian", "Macedonian"]
+    /// What the model is told: every chosen language it knows, the first of them for one-language models, none for
+    /// models that detect the language themselves.
+    var spokenLanguages: [String] {
+        let usable = languages.filter(model.languages.contains)
+        switch model.languageMode {
+        case .several: return usable
+        case .one: return Array(usable.prefix(1))
+        case .automatic: return []
+        }
+    }
 
     private enum LegacyKeys: String, CodingKey { case language }
     init() {}
@@ -215,7 +237,7 @@ struct Preferences: Codable, Equatable {
         launchAtLogin = (try? values.decodeIfPresent(Bool.self, forKey: .launchAtLogin)) ?? defaults.launchAtLogin
         appearance = (try? values.decodeIfPresent(String.self, forKey: .appearance)) ?? defaults.appearance
         let legacy = (try? decoder.container(keyedBy: LegacyKeys.self).decodeIfPresent(String.self, forKey: .language)) ?? nil
-        languages = (try? values.decodeIfPresent([String].self, forKey: .languages)) ?? legacy.flatMap { Self.supportedLanguages.contains($0) ? [$0] : nil } ?? []
+        languages = (try? values.decodeIfPresent([String].self, forKey: .languages)) ?? legacy.flatMap { ASRModel.best.languages.contains($0) ? [$0] : nil } ?? []
         vocabulary = (try? values.decodeIfPresent(String.self, forKey: .vocabulary)) ?? defaults.vocabulary
         openRouterModel = (try? values.decodeIfPresent(String.self, forKey: .openRouterModel)) ?? defaults.openRouterModel
         templates = (try? values.decodeIfPresent([AnalysisTemplate].self, forKey: .templates)).flatMap { $0.isEmpty ? nil : $0 } ?? defaults.templates

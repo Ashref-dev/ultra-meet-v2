@@ -4,7 +4,7 @@ Guidance for anyone (human or agent) changing this repo. Read it before editing.
 
 ## Product in one paragraph
 
-A macOS menu-bar agent (`LSUIElement`, bundle `tn.achraf.ultratranscribe`, by achraf.tn, site ultra.achraf.tn). One click records **You** (microphone, green) and **Colleagues** (Mac audio, orange) on separate tracks. After Stop, Qwen3-ASR transcribes locally in a Python/MLX worker. Only when the user clicks **Analyze with AI** is the transcript text, never audio, sent to their OpenRouter model, using an editable template. There is no local language model.
+A macOS menu-bar agent (`LSUIElement`, bundle `tn.achraf.ultratranscribe`, by achraf.tn, site ultra.achraf.tn). One click records **You** (microphone, green) and **Colleagues** (Mac audio, orange) on separate tracks. After Stop, a local speech model (Qwen3-ASR by default; Whisper, Cohere, Parakeet, Granite and Voxtral are optional downloads) transcribes in a Python/MLX worker. Only when the user clicks **Analyze with AI** is the transcript text, never audio, sent to their OpenRouter model, using an editable template. There is no local language model.
 
 ## Priorities, not afterthoughts
 
@@ -63,7 +63,7 @@ Quit the running app before rebuilding the copy it runs from, and check that no 
 - **Recognition changes are measured on real audio,** never guessed. Run `scripts/eval/eval.py` (synthetic set with known text) and A/B on real meeting copies in a temp dir; compare lines, words and languages per side. Record results in `QA.md`.
   - Proven: utterance segmentation at pauses, 70 Hz high-pass, mild spectral denoise, gain to −20 dBFS (up to +40 dB), allowed-language logits constraint (plus "None" for no speech), filler/sound-event filter, mic-echo dedupe, speech detection relative to each track's own noise floor and loudest speech (no fixed loudness bar), quiet stretches as short clips of their own, re-decoding an unsure "None" as the likeliest language, re-decoding answers that recite the Names and terms prompt without it.
   - Rejected: a "Saudi Arabic" context hint (recited on silence, drifted Arabic to English); envelope-correlation bleed detection (never fired, dropped a real line); comparing text confidence across languages; a head start for the speaker's previous language; one 4 dB margin for all speech; splitting regions by their own loudest speech.
-- **Performance claims come from benchmarks.** RAM per model is measured via `proc_pid_rusage` phys_footprint (Activity Monitor "Memory"); numbers live in `ASRModel.memoryGB`/`speed`.
+- **Performance claims come from benchmarks.** RAM per model is measured via `proc_pid_rusage` phys_footprint (Activity Monitor "Memory"); numbers live in `ASRModel` (`memoryGB`, `minuteSeconds`), measured on the `scripts/eval` meeting with `/usr/bin/time -l`, model load included.
 - **UI is verified by using the built app,** with screenshots of the real surfaces. Report anything not seen on screen as unverified.
 - **Say what failed.** If a gate fails or you couldn't run it, write that down plainly.
 

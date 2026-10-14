@@ -246,10 +246,18 @@ struct MeetingDetail: View {
         LineActions(
             canSeek: canSeek,
             canRedo: canSeek && !isActive && !isTranscribing && state.redoingLineID == nil && !state.engine.busy,
-            languages: state.preferences.languages.isEmpty ? ["English", "Arabic", "French"] : state.preferences.languages,
+            languages: redoLanguages,
+            canDetect: state.speechModel(for: meeting).languageMode == .several,
             seek: { play(audioFiles, at: $0.start) },
             redo: { state.retranscribe(meeting.id, line: $0, as: $1) },
             edit: { state.editLine(meeting.id, line: $0.id, text: $1) })
+    }
+    /// Languages a line can be transcribed again as: the chosen ones first, none for models that detect by themselves.
+    var redoLanguages: [String] {
+        let model = state.speechModel(for: meeting)
+        guard model.languageMode != .automatic else { return [] }
+        let chosen = state.preferences.languages.filter(model.languages.contains)
+        return chosen.isEmpty ? model.languages.filter(["English", "Arabic", "French"].contains) : chosen
     }
     /// The line being heard at `position`, highlighted and kept in view while the meeting plays.
     func playingLine(at position: Double) -> UUID? {

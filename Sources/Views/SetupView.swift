@@ -45,7 +45,7 @@ struct SetupView: View {
                 if canSkip { Button("Skip") { go(step + 1) }.buttonStyle(ControlStyle(kind: .quiet)).transition(.opacity) }
                 Button(primaryTitle) {
                     if step == Self.steps.count - 1 { done(); return }
-                    if needsDownload { state.runOperation { await state.installModels() } }
+                    if needsDownload { state.runOperation { await state.install(state.preferences.model) } }
                     go(step + 1)
                 }
                 .buttonStyle(ControlStyle(kind: .primary))
@@ -136,13 +136,19 @@ struct SetupView: View {
     var speech: some View {
         VStack(alignment: .leading, spacing: 16) {
             title("Speech recognition", "Pick a model for this Mac and the languages people speak. The model downloads once, then transcription runs here, offline.")
-            VStack(spacing: 0) { SpeechModelList(state: state, offersDownload: false) }.card()
+            VStack(spacing: 0) { SpeechModelList(state: state, models: setupModels, offersActions: false) }.card()
             VStack(alignment: .leading, spacing: 8) {
                 MonoLabel("Languages spoken")
                 LanguageChips(state: state)
-                Text("Choose only the languages your meetings use, for example English, Arabic and French.").font(.system(size: 11.5)).foregroundStyle(Theme.secondary)
+                Text("Choose only the languages your meetings use, for example English, Arabic and French. Whisper, Cohere and other models are in Settings → Transcription.").font(.system(size: 11.5)).foregroundStyle(Theme.secondary)
             }
         }
+    }
+
+    /// Setup offers the Qwen3-ASR models, plus the chosen one when it was picked in Settings.
+    var setupModels: [ASRModel] {
+        let qwen: [ASRModel] = [.best, .large, .small]
+        return qwen.contains(state.preferences.model) ? qwen : qwen + [state.preferences.model]
     }
 
     var notes: some View {
@@ -166,8 +172,8 @@ struct SetupView: View {
                 }
                 .padding(12).card()
             } else if !state.engine.ready(state.preferences.model) {
-                InlineHint(symbol: "arrow.down.circle", text: "\(state.preferences.model.shortLabel) (\(state.preferences.model.size)) isn’t downloaded yet. Meetings are transcribed once it is; until then recordings are kept.",
-                           action: ("Download", { state.runOperation { await state.installModels() } }))
+                InlineHint(symbol: "arrow.down.circle", text: "\(state.preferences.model.name) (\(state.preferences.model.size)) isn’t downloaded yet. Meetings are transcribed once it is; until then recordings are kept.",
+                           action: ("Download", { state.runOperation { await state.install(state.preferences.model) } }))
             }
             VStack(spacing: 0) {
                 SettingsToggle(title: "Notify me when a transcript is ready", detail: "Only while you’re in another app.", isOn: Binding(get: { state.preferences.notifyWhenReady }, set: { on in

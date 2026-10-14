@@ -18,7 +18,9 @@ struct SpeakerBlock: Identifiable {
 struct LineActions {
     var canSeek: Bool
     var canRedo: Bool
+    /// Languages a line can be forced into; empty when the model detects the language itself.
     var languages: [String]
+    var canDetect: Bool
     var seek: (TranscriptSegment) -> Void
     var redo: (TranscriptSegment, String?) -> Void
     var edit: (TranscriptSegment, String) -> Void
@@ -124,12 +126,18 @@ struct SpeakerBlockView: View {
                 }
                 Button("Edit Line") { beginEditing(segment) }
                 Divider()
-                Menu("Transcribe Again As") {
-                    ForEach(actions.languages, id: \.self) { language in Button(language) { actions.redo(segment, language) } }
-                    Divider()
-                    Button("Detect Language") { actions.redo(segment, nil) }
+                if actions.languages.isEmpty {
+                    Button("Transcribe Again") { actions.redo(segment, nil) }.disabled(!actions.canRedo)
+                } else {
+                    Menu("Transcribe Again As") {
+                        ForEach(actions.languages, id: \.self) { language in Button(language) { actions.redo(segment, language) } }
+                        if actions.canDetect {
+                            Divider()
+                            Button("Detect Language") { actions.redo(segment, nil) }
+                        }
+                    }
+                    .disabled(!actions.canRedo)
                 }
-                .disabled(!actions.canRedo)
             }
         }
     }

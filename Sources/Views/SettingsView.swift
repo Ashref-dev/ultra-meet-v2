@@ -224,25 +224,18 @@ struct RecordingSettings: View {
 struct TranscriptionSettings: View {
     @ObservedObject var state: AppState
     let memory = ProcessInfo.processInfo.physicalMemory
-    var languageSummary: String {
-        switch state.preferences.languages.count {
-        case 0: return "Any of 30 languages is detected."
-        case 1: return "Everything is transcribed as \(state.preferences.languages[0])."
-        default: return "Each sentence is recognized as \(state.preferences.languages.formatted(.list(type: .or)))."
-        }
-    }
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            SettingsSection(title: "Speech model", footer: "Runs entirely on this Mac (\(Int((Double(memory) / 1_073_741_824).rounded())) GB memory). Memory is only used while a meeting is being transcribed.") {
+            SettingsSection(title: "Speech model", footer: "Everything runs on this Mac (\(Int((Double(memory) / 1_073_741_824).rounded())) GB memory), and memory is used only while transcribing. Times and memory are measured on a one-minute meeting, loading included.") {
                 SpeechModelList(state: state)
             }
             SettingsSection(title: "While recording") {
                 SettingsToggle(title: "Transcribe while recording", detail: "The transcript is ready seconds after you stop, and you can follow it live. Keeps the speech model in memory during meetings.", isOn: $state.preferences.liveTranscription)
             }
-            SettingsSection(title: "Languages spoken", footer: "\(languageSummary) Choose only the languages people speak, so short sounds can’t be mistaken for other languages. Dialects such as Saudi Arabic count as Arabic.") {
+            SettingsSection(title: "Languages spoken", footer: LanguageChips.summary(state.preferences)) {
                 LanguageChips(state: state).padding(12)
             }
-            SettingsSection(title: "Names and terms", footer: "Comma-separated names, products and jargon. Words only: sentences here can confuse recognition. Correcting a line in a transcript offers to add new names here.") {
+            SettingsSection(title: "Names and terms", footer: "Comma-separated names, products and jargon. Words only: sentences here can confuse recognition. Qwen3-ASR and Whisper use them. Correcting a line in a transcript offers to add new names here.") {
                 TextField("", text: $state.preferences.vocabulary, prompt: Text("Achraf, Kubernetes, Q3 roadmap"), axis: .vertical)
                     .textFieldStyle(.plain).font(.system(size: 13)).lineLimit(1...4).focusEffectDisabled().padding(12)
             }
@@ -250,87 +243,161 @@ struct TranscriptionSettings: View {
     }
 }
 
-/// The three local speech models with memory, speed and install state, plus the download control.
+/// The local speech models with what each is good at, its cost, and download or delete. Setup shows only `models`
+/// and offers the download as its main button instead of per-row actions.
 struct SpeechModelList: View {
     @ObservedObject var state: AppState
+    var models = ASRModel.allCases
+    var offersActions = true
+    @State private var deleting: ASRModel?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    /// Setup offers the download as its main button instead.
-    var offersDownload = true
     var recommended: ASRModel { ASRModel.recommended(forMemory: ProcessInfo.processInfo.physicalMemory) }
     var body: some View {
-        ForEach(Array(ASRModel.allCases.reversed().enumerated()), id: \.element) { index, model in
+        ForEach(Array(models.enumerated()), id: \.element) { index, model in
             if index > 0 { RowDivider() }
+            if model == .whisperTurbo && offersActions {
+                MonoLabel("More models").frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 12).padding(.top, 12).padding(.bottom, 4)
+            }
             row(model)
-        }
-        if state.engine.busy && state.processingID == nil && state.liveID == nil {
-            RowDivider()
-            VStack(alignment: .leading, spacing: 8) {
-                DotProgress(value: state.engine.fraction, dots: 40).frame(height: 6)
-                HStack {
-                    Text(state.engine.message).font(.system(size: 11.5)).foregroundStyle(Theme.secondary)
-                    Spacer()
-                    Button("Cancel") { state.cancelProcessing() }.buttonStyle(ControlStyle(kind: .quiet, compact: true))
+            if state.engine.downloading == model {
+                VStack(alignment: .leading, spacing: 8) {
+                    DotProgress(value: state.engine.fraction, dots: 40).frame(height: 6)
+                    HStack {
+                        Text(state.engine.message).font(.system(size: 11.5)).foregroundStyle(Theme.secondary)
+                        Spacer()
+                        Button("Cancel") { state.cancelProcessing() }.buttonStyle(ControlStyle(kind: .quiet, compact: true))
+                    }
                 }
-            }
-            .padding(14)
-        } else if offersDownload && !state.engine.ready(state.preferences.model) {
-            RowDivider()
-            SettingsRow(title: "\(state.preferences.model.shortLabel) isn’t downloaded yet", detail: "\(state.preferences.model.size) download, one time.") {
-                Button("Download") { state.runOperation { await state.installModels() } }
-                    .buttonStyle(ControlStyle(kind: .primary, compact: true)).disabled(state.operationTask != nil)
+                .padding(.horizontal, 12).padding(.bottom, 12).padding(.leading, 28)
+                .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .top)))
             }
         }
+        .animation(reduceMotion ? nil : Theme.selection, value: state.engine.downloading)
+        .confirmationDialog("Delete \(deleting?.name ?? "this model")?", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } })) {
+            Button("Delete", role: .destructive) { if let deleting { state.deleteModel(deleting) }; deleting = nil }
+            Button("Cancel", role: .cancel) { deleting = nil }
+        } message: { Text("This frees \(deleting?.size ?? "its space") on this Mac. Transcripts are kept, and you can download the model again.") }
     }
     func row(_ model: ASRModel) -> some View {
         let selected = state.preferences.model == model
-        return Button { withAnimation(reduceMotion ? nil : Theme.feedback) { state.preferences.model = model } } label: {
-            HStack(alignment: .center, spacing: 12) {
-                ZStack {
-                    Circle().strokeBorder(selected ? Theme.orange : Theme.secondary.opacity(0.4), lineWidth: 1.5).frame(width: 16, height: 16)
-                    if selected { Circle().fill(Theme.orange).frame(width: 8, height: 8).transition(reduceMotion ? .identity : .scale) }
-                }
-                VStack(alignment: .leading, spacing: 3) {
-                    HStack(spacing: 7) {
-                        Text(model.label).font(.system(size: 13, weight: selected ? .semibold : .regular))
-                        if model == recommended {
-                            Text("Recommended").font(.system(size: 9.5, weight: .semibold, design: .monospaced)).textCase(.uppercase)
-                                .foregroundStyle(Theme.orange).padding(.horizontal, 5).padding(.vertical, 2)
-                                .background(Theme.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: Theme.chipRadius, style: .continuous))
-                        }
+        let installed = state.engine.ready(model)
+        return HStack(alignment: .center, spacing: 12) {
+            Button { withAnimation(reduceMotion ? nil : Theme.feedback) { state.preferences.model = model } } label: {
+                HStack(alignment: .center, spacing: 12) {
+                    ZStack {
+                        Circle().strokeBorder(selected ? Theme.orange : Theme.secondary.opacity(0.4), lineWidth: 1.5).frame(width: 16, height: 16)
+                        if selected { Circle().fill(Theme.orange).frame(width: 8, height: 8).transition(reduceMotion ? .identity : .scale) }
                     }
-                    Text("≈ \(String(format: "%.1f", model.memoryGB)) GB memory · \(model.speed)× real time").font(.system(size: 11.5)).foregroundStyle(Theme.secondary)
+                    VStack(alignment: .leading, spacing: 3) {
+                        HStack(spacing: 8) {
+                            Text(model.name).font(.system(size: 13, weight: selected ? .semibold : .regular))
+                            if model == recommended {
+                                Text("Recommended").font(.system(size: 9.5, weight: .semibold, design: .monospaced)).textCase(.uppercase)
+                                    .foregroundStyle(Theme.orange).padding(.horizontal, 5).padding(.vertical, 2)
+                                    .background(Theme.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: Theme.chipRadius, style: .continuous))
+                            }
+                        }
+                        Text("\(model.maker) · \(Self.languageLine(model))").font(.system(size: 11.5)).foregroundStyle(Theme.secondary)
+                        Text("\(model.size) download · \(String(format: "%.1f", model.memoryGB)) GB memory · 1 min in \(model.minuteSeconds) s")
+                            .font(.system(size: 11, design: .monospaced)).foregroundStyle(Theme.secondary.opacity(0.85))
+                    }
+                    Spacer(minLength: 8)
                 }
-                Spacer()
-                MonoLabel(state.engine.ready(model) ? "Installed" : model.size)
+                .contentShape(Rectangle())
             }
-            .padding(.horizontal, 14).padding(.vertical, 11).contentShape(Rectangle())
+            .buttonStyle(.plain)
+            .accessibilityAddTraits(selected ? [.isSelected, .isButton] : .isButton)
+            .accessibilityHint(installed ? "Installed" : "Not downloaded")
+            if offersActions && installed {
+                MonoLabel("Installed")
+                Button { deleting = model } label: { Image(systemName: "trash").font(.system(size: 11, weight: .semibold)) }
+                    .buttonStyle(ControlStyle(kind: .quiet, compact: true, square: true))
+                    .help("Delete \(model.name)").accessibilityLabel("Delete \(model.name)")
+            } else if offersActions {
+                Button("Download") { state.runOperation { await state.install(model) } }
+                    .buttonStyle(ControlStyle(kind: selected ? .primary : .secondary, compact: true))
+                    .disabled(state.operationTask != nil)
+            } else {
+                MonoLabel(installed ? "Installed" : model.size)
+            }
         }
-        .buttonStyle(.plain)
+        .padding(.horizontal, 12).padding(.vertical, 10)
         .disabled(state.engine.busy)
-        .accessibilityAddTraits(selected ? [.isSelected, .isButton] : .isButton)
+    }
+    static func languageLine(_ model: ASRModel) -> String {
+        let count = model.languages.count == 2 ? model.languages.formatted(.list(type: .and)) : "\(model.languages.count) languages"
+        switch model.languageMode {
+        case .several: return "\(count), mixed freely"
+        case .one: return "\(count), one at a time"
+        case .automatic: return "\(count), detected automatically"
+        }
     }
 }
 
-/// Language toggles: the common ones, any already chosen, and the rest behind More.
+/// Language toggles for the selected model: the common ones it knows, any already chosen, the rest behind More.
+/// One-language models treat the chips as a single choice; models that detect the language list what they know.
 struct LanguageChips: View {
     @ObservedObject var state: AppState
     static let common = ["English", "Arabic", "French", "Spanish", "German", "Italian", "Portuguese", "Turkish", "Hindi", "Chinese", "Japanese", "Korean"]
-    var shown: [String] { Self.common + state.preferences.languages.filter { !Self.common.contains($0) } }
+    var model: ASRModel { state.preferences.model }
+    var shown: [String] {
+        let supported = model.languages
+        return Self.common.filter(supported.contains) + state.preferences.languages.filter { supported.contains($0) && !Self.common.contains($0) }
+    }
     var body: some View {
-        FlowLayout(spacing: 6) {
-            ForEach(shown, id: \.self) { language in
-                ToggleChip(title: language, isOn: Binding(
-                    get: { state.preferences.languages.contains(language) },
-                    set: { on in
-                        if on { state.preferences.languages.append(language) } else { state.preferences.languages.removeAll { $0 == language } }
-                    }))
-            }
-            Menu {
-                ForEach(Preferences.supportedLanguages.filter { !shown.contains($0) }, id: \.self) { language in
-                    Button(language) { state.preferences.languages.append(language) }
+        if model.languageMode == .automatic {
+            Text(model.languages.formatted(.list(type: .and)))
+                .font(.system(size: 12.5)).foregroundStyle(Theme.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading).fixedSize(horizontal: false, vertical: true)
+        } else {
+            FlowLayout(spacing: 6) {
+                ForEach(shown, id: \.self) { language in
+                    ToggleChip(title: language, isOn: Binding(get: { isOn(language) }, set: { set(language, on: $0) }))
                 }
-            } label: { HStack(spacing: 4) { Text("More"); Image(systemName: "chevron.down").font(.system(size: 8, weight: .bold)) } }
-            .menuStyle(.button).buttonStyle(ControlStyle(kind: .quiet, compact: true)).menuIndicator(.hidden).fixedSize()
+                let rest = model.languages.filter { !shown.contains($0) }
+                if !rest.isEmpty {
+                    Menu {
+                        ForEach(rest, id: \.self) { language in Button(language) { set(language, on: true) } }
+                    } label: { HStack(spacing: 4) { Text("More"); Image(systemName: "chevron.down").font(.system(size: 8, weight: .bold)) } }
+                    .menuStyle(.button).buttonStyle(ControlStyle(kind: .quiet, compact: true)).menuIndicator(.hidden).fixedSize()
+                }
+            }
+        }
+    }
+    func isOn(_ language: String) -> Bool {
+        model.languageMode == .one ? state.preferences.spokenLanguages.first == language : state.preferences.languages.contains(language)
+    }
+    /// Choices are kept across models: picking a language for a one-language model moves it to the front.
+    func set(_ language: String, on: Bool) {
+        if model.languageMode == .one {
+            guard on else { return }
+            state.preferences.languages.removeAll { $0 == language }
+            state.preferences.languages.insert(language, at: 0)
+        } else if on {
+            if !state.preferences.languages.contains(language) { state.preferences.languages.append(language) }
+        } else {
+            state.preferences.languages.removeAll { $0 == language }
+        }
+    }
+    static func summary(_ preferences: Preferences) -> String {
+        let model = preferences.model
+        let spoken = preferences.spokenLanguages
+        let unsupported = preferences.languages.filter { !model.languages.contains($0) }
+        let missing = unsupported.formatted(.list(type: .and))
+        let note = unsupported.isEmpty ? "" : " \(model.name) doesn’t support \(missing)."
+        switch model.languageMode {
+        case .automatic:
+            return "\(model.name) detects the language of each sentence by itself" + (unsupported.isEmpty ? "." : ", and doesn’t support \(missing).")
+        case .one:
+            return spoken.first.map { "Everything is transcribed as \($0). \(model.name) transcribes one language per meeting." }
+                ?? "Choose the language people speak: \(model.name) transcribes one language per meeting."
+        case .several:
+            let base = switch spoken.count {
+            case 0: "Any of \(model.languages.count) languages is detected."
+            case 1: "Everything is transcribed as \(spoken[0])."
+            default: "Each sentence is recognized as \(spoken.formatted(.list(type: .or)))."
+            }
+            return base + note + " Choose only the languages people speak, so short sounds can’t be mistaken for other languages. Dialects such as Saudi Arabic count as Arabic."
         }
     }
 }

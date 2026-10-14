@@ -17,7 +17,7 @@ from enum import StrEnum
 from fnmatch import fnmatch
 from math import exp, gcd
 from pathlib import Path
-from typing import Annotated, Final, NamedTuple, Protocol, cast
+from typing import TYPE_CHECKING, Annotated, Final, NamedTuple, Protocol, cast
 from uuid import uuid4
 
 import numpy as np
@@ -28,11 +28,38 @@ from pydantic import BaseModel, ConfigDict
 from scipy.ndimage import maximum_filter1d, uniform_filter1d
 from scipy.signal import butter, istft, resample_poly, sosfilt, sosfilt_zi, stft
 
+if TYPE_CHECKING:
+    import mlx.core as mx
+
 app = typer.Typer(no_args_is_help=True)
+
+
+class Engine(StrEnum):
+    """How a model treats languages: Qwen and Whisper pick among the allowed ones, Cohere needs exactly one,
+    and the automatic models detect the language themselves without a setting."""
+
+    qwen = "qwen"
+    whisper = "whisper"
+    cohere = "cohere"
+    automatic = "automatic"
+
+
+class Model(NamedTuple):
+    repo: str
+    engine: Engine
+
+
+# Keys are stored in preferences and meetings; never rename one.
 MODELS: Final = {
-    "small": "mlx-community/Qwen3-ASR-0.6B-8bit",
-    "large": "mlx-community/Qwen3-ASR-1.7B-8bit",
-    "best": "mlx-community/Qwen3-ASR-1.7B-bf16",
+    "small": Model("mlx-community/Qwen3-ASR-0.6B-8bit", Engine.qwen),
+    "large": Model("mlx-community/Qwen3-ASR-1.7B-8bit", Engine.qwen),
+    "best": Model("mlx-community/Qwen3-ASR-1.7B-bf16", Engine.qwen),
+    "whisper-turbo": Model("mlx-community/whisper-large-v3-turbo-asr-fp16", Engine.whisper),
+    "cohere": Model("littoralai/cohere-transcribe-mlx-8bit", Engine.cohere),
+    "cohere-arabic": Model("majentik/cohere-transcribe-arabic-07-2026-MLX-8bit", Engine.cohere),
+    "parakeet": Model("mlx-community/parakeet-tdt-0.6b-v3", Engine.automatic),
+    "granite": Model("mlx-community/granite-4.0-1b-speech-8bit", Engine.automatic),
+    "voxtral": Model("mlx-community/Voxtral-Mini-4B-Realtime-2602-4bit", Engine.automatic),
 }
 AUDIO_SUFFIXES: Final = {".wav", ".caf", ".m4a", ".mp3", ".flac", ".aiff", ".ogg"}
 RATE: Final = 16000
@@ -61,12 +88,6 @@ FILLERS: Final = frozenset({
 })  # fillers, and sound events the model names instead of transcribing
 
 Audio = NDArray[np.float32]
-
-
-class ASRSize(StrEnum):
-    small = "small"
-    large = "large"
-    best = "best"
 
 
 class Tokenizer(Protocol):
@@ -106,7 +127,33 @@ class Progress(BaseModel):
 class Heard(NamedTuple):
     language: str | None
     text: str
-    confidence: float  # geometric-mean probability of the text tokens
+    confidence: float | None  # geometric-mean probability of the text tokens, when the model reports it
+
+
+class Output(Protocol):
+    text: str
+    segments: list[dict[str, float]] | None
+    language: str | None
+
+
+class Generic(Protocol):
+    def generate(self, audio: object, **options: object) -> Output: ...
+
+
+class Dimensions(Protocol):
+    n_mels: int
+
+
+class Whisper(Generic, Protocol):
+    dims: Dimensions
+    dtype: mx.Dtype
+
+    def detect_language(self, mel: object) -> tuple[object, dict[str, float]]: ...
+
+
+class Recognizer(NamedTuple):
+    engine: Engine
+    model: object
 
 
 class Layout(NamedTuple):
@@ -462,7 +509,60 @@ def recognize(speech: Speech, clip: Audio, languages: list[str], context: str, f
         return heard
     likeliest = max((chance, name) for name, chance in gate.odds.items() if name != "None")[1]
     other = recognize(speech, clip, languages, context, forced=likeliest)
-    return other if other.confidence >= ACCEPT and meaningful(other.text, context) else heard
+    return other if (other.confidence or 0) >= ACCEPT and meaningful(other.text, context) else heard
+
+
+def code(language: str) -> str:
+    from mlx_audio.stt.models.whisper.tokenizer import TO_LANGUAGE_CODE
+
+    return TO_LANGUAGE_CODE.get(language.lower(), language.lower())
+
+
+def name(language: str | None) -> str | None:
+    from mlx_audio.stt.models.whisper.tokenizer import LANGUAGES
+
+    return LANGUAGES[language].title() if language in LANGUAGES else None
+
+
+def hear(recognizer: Recognizer, clip: Audio, languages: list[str], context: str, forced: str | None = None) -> Heard:
+    """Transcribe one utterance with whichever engine the chosen model uses."""
+    import mlx.core as mx
+
+    match recognizer.engine:
+        case Engine.qwen:
+            return recognize(cast(Speech, recognizer.model), clip, languages, context, forced)
+        case Engine.whisper:
+            return whispered(cast(Whisper, recognizer.model), clip, languages, context, forced)
+        case Engine.cohere:
+            language = forced or next(iter(languages), None)
+            if language is None:
+                raise typer.BadParameter("Choose the language people speak in Settings → Transcription.")
+            output = cast(Generic, recognizer.model).generate(clip, language=code(language), sample_rate=RATE)
+            return Heard(None, tidy(output.text), None)  # it transcribes other languages as they are, so the setting isn't a label
+        case Engine.automatic:
+            return Heard(None, tidy(cast(Generic, recognizer.model).generate(mx.array(clip)).text), None)
+
+
+def whispered(model: Whisper, clip: Audio, languages: list[str], context: str, forced: str | None) -> Heard:
+    """Whisper limited to the allowed languages: its language scores pick the likeliest allowed one, then the clip is
+    decoded in it. Clips Whisper itself marks as no speech are dropped, since it invents short phrases on noise."""
+    from mlx_audio.stt.models.whisper.audio import (
+        N_FRAMES,
+        log_mel_spectrogram,
+        pad_or_trim,
+    )
+
+    language = forced
+    if language is None and languages:
+        mel = pad_or_trim(log_mel_spectrogram(clip, n_mels=model.dims.n_mels), N_FRAMES, axis=-2)
+        _, odds = model.detect_language(mel.astype(model.dtype))
+        language = max(languages, key=lambda candidate: odds.get(code(candidate), 0.0))
+    output = model.generate(clip, language=code(language) if language else None, initial_prompt=context or None, condition_on_previous_text=False, verbose=None)
+    parts = output.segments or []
+    if not parts or all(part["no_speech_prob"] > 0.6 and part["avg_logprob"] < -1 for part in parts):
+        return Heard(language, "", None)
+    heard = Heard(language or name(output.language), tidy(output.text), exp(sum(part["avg_logprob"] for part in parts) / len(parts)))
+    return whispered(model, clip, languages, "", language) if context and recited(heard.text, context) else heard
 
 
 def tidy(text: str) -> str:
@@ -503,12 +603,22 @@ def without_echo(segments: list[Segment]) -> list[Segment]:
     return kept
 
 
-def load_speech(models: Path, model: ASRSize) -> Speech:
+def chosen(model: str) -> Model:
+    if model not in MODELS:
+        raise typer.BadParameter(f"Unknown speech model {model!r}. Choose one in Settings → Transcription.")
+    return MODELS[model]
+
+
+def load_speech(models: Path, model: str) -> Recognizer:
     os.environ["HF_HUB_OFFLINE"] = "1"
     os.environ["TRANSFORMERS_OFFLINE"] = "1"
     from mlx_audio.stt import load
 
-    return cast(Speech, load(str(models / model)))
+    return Recognizer(chosen(model).engine, load(str(models / model)))
+
+
+def rounded(confidence: float | None) -> float | None:
+    return None if confidence is None else round(confidence, 3)
 
 
 def tracks_in(folder: Path) -> list[Path]:
@@ -520,7 +630,7 @@ def spoken_languages(languages: str) -> list[str]:
 
 
 @app.command()
-def download(models: Path, model: Annotated[ASRSize, typer.Option()] = ASRSize.best) -> None:
+def download(models: Path, model: Annotated[str, typer.Option()] = "best") -> None:
     """Download public speech-model weights once; recording and inference never upload data.
 
     Plain HTTPS, because Xet transfers stalled at 0 bytes on a phone hotspot where HTTPS downloaded normally.
@@ -529,10 +639,11 @@ def download(models: Path, model: Annotated[ASRSize, typer.Option()] = ASRSize.b
     os.environ["HF_HUB_DISABLE_XET"] = "1"
     from huggingface_hub import HfApi, snapshot_download
 
+    repo = chosen(model).repo
     folder = models / model
-    patterns = ["*.json", "*.safetensors", "*.txt", "*.model", "*.tiktoken", "*.jinja"]
+    patterns = ["*.json", "*.safetensors", "*.txt", "*.model", "*.vocab", "*.tiktoken", "*.jinja"]
     progress(models, "Preparing the download…", 0.02)
-    files = HfApi().model_info(MODELS[model], files_metadata=True).siblings or []
+    files = HfApi().model_info(repo, files_metadata=True).siblings or []
     total = sum(file.size or 0 for file in files if any(fnmatch(file.rfilename, pattern) for pattern in patterns))
     finished = threading.Event()
 
@@ -544,11 +655,11 @@ def download(models: Path, model: Annotated[ASRSize, typer.Option()] = ASRSize.b
     reporter = threading.Thread(target=report, daemon=True)
     reporter.start()
     try:
-        _ = snapshot_download(MODELS[model], local_dir=folder, allow_patterns=patterns)
+        _ = snapshot_download(repo, local_dir=folder, allow_patterns=patterns)
     finally:
         finished.set()
         reporter.join()
-    (folder / ".ready").write_text(MODELS[model])
+    (folder / ".ready").write_text(repo)
     progress(models, "Speech model ready for offline use", 1)
 
 
@@ -556,7 +667,7 @@ def download(models: Path, model: Annotated[ASRSize, typer.Option()] = ASRSize.b
 def transcribe(
     folder: Path,
     models: Path,
-    model: Annotated[ASRSize, typer.Option()] = ASRSize.best,
+    model: Annotated[str, typer.Option()] = "best",
     languages: Annotated[str, typer.Option(help="Comma-separated languages people speak; empty detects any.")] = "",
     vocabulary: Annotated[str, typer.Option()] = "",
     follow: Annotated[bool, typer.Option(help="Transcribe while the meeting records, until the app creates .finish.")] = False,
@@ -586,10 +697,10 @@ def transcribe(
             assert speech is not None
             offset = first * FRAME / RATE
             progress(folder, f"Transcribing · {int(offset // 60):02d}:{int(offset % 60):02d}", 0.05 + 0.95 * index / len(work))
-            heard = recognize(speech, track.clip(first, last), spoken, vocabulary)
+            heard = hear(speech, track.clip(first, last), spoken, vocabulary)
             track.covered.append((first, last))
             if meaningful(heard.text, vocabulary):
-                segments.append(Segment(id=str(uuid4()), start=offset, end=last * FRAME / RATE, text=heard.text, source=track.source, language=heard.language, confidence=round(heard.confidence, 3)))
+                segments.append(Segment(id=str(uuid4()), start=offset, end=last * FRAME / RATE, text=heard.text, source=track.source, language=heard.language, confidence=rounded(heard.confidence)))
                 publish(folder / "transcript.partial.json", Transcript(segments=without_echo(sorted(segments, key=lambda item: item.start))).model_dump_json())
         if finishing:
             break
@@ -606,7 +717,7 @@ def line(
     source: Annotated[str, typer.Option()],
     start: Annotated[float, typer.Option()],
     end: Annotated[float, typer.Option()],
-    model: Annotated[ASRSize, typer.Option()] = ASRSize.best,
+    model: Annotated[str, typer.Option()] = "best",
     language: Annotated[str, typer.Option(help="Force this language; empty detects among --languages.")] = "",
     languages: Annotated[str, typer.Option()] = "",
     vocabulary: Annotated[str, typer.Option()] = "",
@@ -621,8 +732,8 @@ def line(
     first, last = max(0, int(start * 50)), min(len(track.levels), int(end * 50) + 1)
     if last - first < 5:
         raise typer.BadParameter("This line is too short to transcribe again.")
-    heard = recognize(load_speech(models, model), track.clip(first, last), spoken_languages(languages), vocabulary, forced=language or None)
-    publish(folder / "line.json", Segment(id=str(uuid4()), start=start, end=end, text=heard.text, source=source, language=heard.language, confidence=round(heard.confidence, 3)).model_dump_json())
+    heard = hear(load_speech(models, model), track.clip(first, last), spoken_languages(languages), vocabulary, forced=language or None)
+    publish(folder / "line.json", Segment(id=str(uuid4()), start=start, end=end, text=heard.text, source=source, language=heard.language, confidence=rounded(heard.confidence)).model_dump_json())
 
 
 if __name__ == "__main__":
