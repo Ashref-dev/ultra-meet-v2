@@ -5,6 +5,19 @@ struct LibraryView: View {
     @ObservedObject var state: AppState
     @State private var deleteID: UUID?
     @AppStorage("sidebarCollapsed") private var collapsed = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// A sized image preserves the circle and colors inside AppKit's native swipe action.
+    private static let trashActionImage: NSImage = {
+        let size = Theme.swipeActionSize
+        let glyph = NSImage(systemSymbolName: "trash", accessibilityDescription: "Move to Trash")?
+            .withSymbolConfiguration(.init(paletteColors: [.white]))
+        return NSImage(size: NSSize(width: size, height: size), flipped: false) { rect in
+            NSColor(Theme.destructive).setFill()
+            NSBezierPath(ovalIn: rect).fill()
+            glyph?.draw(in: rect.insetBy(dx: size * 0.28, dy: size * 0.24))
+            return true
+        }
+    }()
     /// Search ignores case, accents and Arabic spelling variants (see `searchFolded`).
     var query: String { state.search.trimmingCharacters(in: .whitespaces).searchFolded }
     var filtered: [Meeting] {
@@ -21,9 +34,8 @@ struct LibraryView: View {
     var body: some View {
         HStack(spacing: 0) {
             if !collapsed {
-                sidebar.frame(width: 270).background(Theme.background.ignoresSafeArea())
+                sidebar.frame(width: 280).sidebarSurface()
                     .transition(.move(edge: .leading).combined(with: .opacity))
-                Divider().ignoresSafeArea()
             }
             Group {
                 if let meeting = state.selected { MeetingDetail(state: state, meeting: meeting) } else { emptyState }
@@ -31,15 +43,7 @@ struct LibraryView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Theme.paper.ignoresSafeArea())
         }
-        .overlay(alignment: .topLeading) {
-            Button { withAnimation(Theme.selection) { collapsed.toggle() } } label: {
-                Image(systemName: "sidebar.left").font(.system(size: 13, weight: .medium)).frame(width: 28, height: 22).contentShape(Rectangle())
-            }
-            .buttonStyle(ControlStyle(kind: .quiet, compact: true))
-            .help(collapsed ? "Show sidebar (⌃⌘S)" : "Hide sidebar (⌃⌘S)")
-            .accessibilityLabel(collapsed ? "Show sidebar" : "Hide sidebar")
-            .padding(.leading, 76).padding(.top, -24)
-        }
+        .animation(reduceMotion ? nil : Theme.selection, value: collapsed)
         .tint(Theme.orange)
         .frame(minWidth: collapsed ? 560 : 820, minHeight: 560)
         .alert("Something needs your attention", isPresented: Binding(get: { state.error != nil }, set: { if !$0 { state.error = nil } })) {
@@ -47,6 +51,7 @@ struct LibraryView: View {
         } message: { Text(state.error ?? "") }
         .confirmationDialog("Move this meeting and its audio to the Trash?", isPresented: Binding(get: { deleteID != nil }, set: { if !$0 { deleteID = nil } })) {
             Button("Move to Trash", role: .destructive) { if let id = deleteID { state.deleteMeeting(id) }; deleteID = nil }
+                .disabled(deleteID.map { state.isProtected($0) } ?? true)
             Button("Cancel", role: .cancel) { deleteID = nil }
         } message: { Text("You can restore it from the Finder Trash until it’s emptied.") }
     }
@@ -59,8 +64,8 @@ struct LibraryView: View {
                 Button { state.showSettings(.general) } label: { Image(systemName: "gearshape") }
                     .buttonStyle(ControlStyle(kind: .quiet, compact: true)).help("Settings (⌘,)").accessibilityLabel("Settings")
             }
-            .padding(.leading, 18).padding(.trailing, 10).padding(.top, 6).padding(.bottom, 14)
-            Group {
+            .padding(.leading, 18).padding(.trailing, 12).padding(.top, 16).padding(.bottom, 20)
+            GlassControls {
                 if let active = state.active {
                     Button { state.selectedID = active.id } label: {
                         HStack(spacing: 8) {
@@ -84,44 +89,58 @@ struct LibraryView: View {
                     Button { state.search = "" } label: { Image(systemName: "xmark.circle.fill") }.buttonStyle(.plain).foregroundStyle(Theme.secondary).accessibilityLabel("Clear search")
                 }
             }
-            .padding(.horizontal, 10).frame(height: 30)
-            .background(Theme.paper, in: RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous).strokeBorder(Theme.line))
+            .padding(.horizontal, 12).frame(height: Theme.controlHeight)
+            .background(Theme.paper.opacity(0.7), in: RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous).strokeBorder(Theme.line.opacity(0.5)))
             .padding(.horizontal, 14).padding(.top, 10).padding(.bottom, 8)
-            ScrollView {
-                LazyVStack(spacing: 2) {
-                    ForEach(filtered) { meeting in
-                        Button { state.selectedID = meeting.id } label: {
-                            VStack(alignment: .leading, spacing: 6) {
-                                MeetingRow(state: state, meeting: meeting)
-                                if let line = snippet(meeting) {
-                                    HStack(alignment: .firstTextBaseline, spacing: 6) {
-                                        Circle().fill(Theme.speakerColor(line.source)).frame(width: 5, height: 5)
-                                        Text(line.text).font(.system(size: 11.5)).foregroundStyle(Theme.secondary).lineLimit(2)
-                                            .multilineTextAlignment(line.isRightToLeft ? .trailing : .leading)
-                                            .frame(maxWidth: .infinity, alignment: line.isRightToLeft ? .trailing : .leading)
-                                    }
-                                }
+            List(filtered) { meeting in
+                Button { state.selectedID = meeting.id } label: {
+                    VStack(alignment: .leading, spacing: 6) {
+                        MeetingRow(state: state, meeting: meeting)
+                        if let line = snippet(meeting) {
+                            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                                Circle().fill(Theme.speakerColor(line.source)).frame(width: 5, height: 5)
+                                Text(line.text).font(.system(size: 11.5)).foregroundStyle(Theme.secondary).lineLimit(2)
+                                    .multilineTextAlignment(line.isRightToLeft ? .trailing : .leading)
+                                    .frame(maxWidth: .infinity, alignment: line.isRightToLeft ? .trailing : .leading)
                             }
-                            .padding(.horizontal, 10).padding(.vertical, 9)
-                        }
-                        .buttonStyle(RowStyle(selected: meeting.id == state.selectedID))
-                        .accessibilityAddTraits(meeting.id == state.selectedID ? .isSelected : [])
-                        .contextMenu {
-                            Button("Export Markdown…") { state.export(meeting) }
-                            Button("Show in Finder") { NSWorkspace.shared.open(state.library.folder(meeting.id)) }
-                            Divider()
-                            Button("Move to Trash…", role: .destructive) { deleteID = meeting.id }.disabled(state.isProtected(meeting.id))
                         }
                     }
+                    .padding(.horizontal, 12).padding(.vertical, 11)
                 }
-                .padding(.horizontal, 8).padding(.bottom, 12)
+                .buttonStyle(RowStyle(selected: meeting.id == state.selectedID))
+                .accessibilityAddTraits(meeting.id == state.selectedID ? .isSelected : [])
+                .selectionDisabled()
+                .listRowInsets(EdgeInsets(top: 1, leading: 8, bottom: 1, trailing: 8))
+                .listRowSeparator(.hidden)
+                .listRowBackground(Color.clear)
+                .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                    if !state.isProtected(meeting.id) {
+                        // The swipe requests confirmation; only the confirmed action is destructive.
+                        Button { deleteID = meeting.id } label: {
+                            Label { Text("Trash") } icon: {
+                                Image(nsImage: Self.trashActionImage).renderingMode(.original)
+                            }
+                        }
+                        .tint(.clear)
+                        .accessibilityLabel("Move to Trash")
+                        .help("Move to Trash")
+                    }
+                }
+                .contextMenu {
+                    Button("Export Markdown…") { state.export(meeting) }
+                    Button("Show in Finder") { NSWorkspace.shared.open(state.library.folder(meeting.id)) }
+                    Divider()
+                    Button("Move to Trash…", role: .destructive) { deleteID = meeting.id }.disabled(state.isProtected(meeting.id))
+                }
             }
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
+            .environment(\.defaultMinListRowHeight, 0)
             .overlay {
                 if filtered.isEmpty && !state.meetings.isEmpty { Text("No matches").font(.system(size: 12)).foregroundStyle(Theme.secondary) }
             }
         }
-        .background(Theme.background)
     }
     var emptyState: some View {
         VStack(spacing: 18) {

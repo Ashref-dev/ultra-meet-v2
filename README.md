@@ -27,6 +27,7 @@ Updates: Settings → Credits checks for new releases and installs them in place
 - **Left-click** the menu-bar icon for the recorder: choose You and Colleagues, then **Start recording**. While recording you see the meeting name (click to rename), talk time per side, the latest transcript lines, a live waveform and a note field. A warning appears if your microphone is silent or no call audio plays on this Mac.
 - **Right-click** the icon for Start, Pause, Resume, Stop, Meeting Library, Settings, updates and Quit. **⌃⌥⌘R** starts or stops recording from any app.
 - **Stop** saves the audio, finishes the transcript and opens the meeting. A conversation map shows when each side spoke; click it or any timestamp to play both sides together, at up to 2×, with the current line highlighted. Lines are grouped into speaker turns, labeled by language in mixed-language meetings, and right-to-left languages align correctly. Click a line to play it, double-click to fix a typo. Unsure lines are underlined; right-click a line to transcribe it again as another language. Corrections offer to add new names to Names and terms.
+- **Trash a meeting:** swipe left on its library row to reveal the round Trash button, then click and confirm. The meeting and its audio move to the Finder Trash for recovery. Recording and processing meetings cannot be trashed.
 - **AI notes → Analyze with AI** produces a summary, discussion, decisions, action items for you and for your colleagues, and open questions. The model also gets talk time per side, the languages heard, your typed notes and which lines were unclear. Automatically named meetings get a descriptive title.
 
 | Shortcut | Action |
@@ -38,6 +39,12 @@ Updates: Settings → Credits checks for new releases and installs them in place
 | ⌘L | Meeting library |
 | ⌃⌘S | Toggle sidebar |
 | ⌘, | Settings |
+
+### macOS appearance
+
+The recorder, library, settings and setup use native macOS materials, rounded controls and an orange accent. On macOS 26 and later, including macOS 27, action controls use Liquid Glass. Transcripts, notes and settings cards stay opaque for reading. Light, Dark and System appearance are in Settings → General. Reduce Transparency and Increase Contrast use solid control surfaces; Reduce Motion removes control transitions and the travelling progress pulse.
+
+The library's native toolbar button or ⌃⌘S shows and hides the sidebar. macOS 15 remains supported with standard materials instead of Liquid Glass.
 
 ## Speech models
 
@@ -71,6 +78,8 @@ On a 12-minute English and Saudi Arabic meeting, limiting detection to English a
 - Audio of transcribed meetings is deleted after the retention period you choose; transcripts and notes are kept.
 
 ## Build from source
+
+Use full Xcode and install `uv` (`brew install uv`) before building. If `xcode-select -p` points to Command Line Tools, prefix the build command with `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer`; the macOS 27 SwiftUI macros require the full Xcode toolchain.
 
 ```sh
 swift test

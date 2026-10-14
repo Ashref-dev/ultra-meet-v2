@@ -15,9 +15,13 @@ struct SetupView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 8) {
-                LogoMark(size: 12)
-                MonoLabel("Setup · \(Self.steps[step])")
+            HStack(spacing: 9) {
+                LogoMark(size: 13)
+                Text("Setup")
+                    .font(.system(size: 13, weight: .semibold))
+                Text("· \(Self.steps[step])")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Theme.secondary)
                 Spacer()
                 HStack(spacing: 5) {
                     ForEach(Self.steps.indices, id: \.self) { index in
@@ -27,29 +31,34 @@ struct SetupView: View {
                 .animation(reduceMotion ? nil : Theme.selection, value: step)
                 .accessibilityElement().accessibilityLabel("Step \(step + 1) of \(Self.steps.count)")
             }
-            .padding(.horizontal, 22).padding(.top, 16).padding(.bottom, 12)
+            .padding(.horizontal, 22).padding(.top, 18).padding(.bottom, 14)
             ScrollView {
                 page
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 32).padding(.vertical, 12)
+                    .padding(.horizontal, 24).padding(.vertical, 20)
             }
+            .background(Theme.paper, in: RoundedRectangle(cornerRadius: Theme.radius, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: Theme.radius, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: Theme.radius, style: .continuous).strokeBorder(Theme.line))
+            .padding(.horizontal, 16)
             .id(step)
             .transition(.asymmetric(insertion: .opacity.combined(with: .offset(x: 18)), removal: .opacity))
-            Divider()
-            HStack(spacing: 8) {
-                if step > 0 { Button("Back") { go(step - 1) }.buttonStyle(ControlStyle(kind: .quiet)) }
-                else { Button("Skip Setup") { done() }.buttonStyle(ControlStyle(kind: .quiet)) }
-                Spacer()
-                if canSkip { Button("Skip") { go(step + 1) }.buttonStyle(ControlStyle(kind: .quiet)).transition(.opacity) }
-                Button(primaryTitle) {
-                    if step == Self.steps.count - 1 { done(); return }
-                    if needsDownload { state.runOperation { await state.installModels() } }
-                    go(step + 1)
+            GlassControls {
+                HStack(spacing: 10) {
+                    if step > 0 { Button("Back") { go(step - 1) }.buttonStyle(ControlStyle(kind: .quiet)) }
+                    else { Button("Skip Setup") { done() }.buttonStyle(ControlStyle(kind: .quiet)) }
+                    Spacer()
+                    if canSkip { Button("Skip") { go(step + 1) }.buttonStyle(ControlStyle(kind: .quiet)).transition(.opacity) }
+                    Button(primaryTitle) {
+                        if step == Self.steps.count - 1 { done(); return }
+                        if needsDownload { state.runOperation { await state.installModels() } }
+                        go(step + 1)
+                    }
+                    .buttonStyle(ControlStyle(kind: .primary))
+                    .keyboardShortcut(.defaultAction)
                 }
-                .buttonStyle(ControlStyle(kind: .primary))
-                .keyboardShortcut(.defaultAction)
             }
-            .padding(.horizontal, 22).padding(.vertical, 14)
+            .padding(.horizontal, 22).padding(.vertical, 16)
         }
         .frame(width: 580, height: 560)
         .background(Theme.background)
@@ -88,7 +97,7 @@ struct SetupView: View {
     }
 
     var welcome: some View {
-        VStack(alignment: .leading, spacing: 18) {
+        VStack(alignment: .leading, spacing: 20) {
             Image(nsImage: LogoGlyph.appIcon(size: 160)).resizable().frame(width: 80, height: 80).accessibilityHidden(true)
             title("Welcome to Ultra Transcribe", "Meeting notes for the AI-native era, made on your Mac.")
             feature(AnyView(HStack(spacing: -6) { SpeakerAvatar(source: "microphone", size: 22); SpeakerAvatar(source: "system", size: 22) }), "You and your colleagues, on separate tracks", "Every line of the transcript says who spoke.")
@@ -186,8 +195,8 @@ struct SetupView: View {
     }
 
     func title(_ heading: String, _ detail: String) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(heading).font(.system(size: 24, weight: .semibold)).tracking(-0.5)
+        VStack(alignment: .leading, spacing: 7) {
+            Text(heading).font(.system(size: 25, weight: .semibold)).tracking(-0.45)
             Text(detail).font(.system(size: 13)).foregroundStyle(Theme.secondary).fixedSize(horizontal: false, vertical: true)
         }
     }

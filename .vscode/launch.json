@@ -1,0 +1,24 @@
+{
+    "configurations": [
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:ultra-meet-v2}",
+            "name": "Debug UltraTranscribe",
+            "target": "UltraTranscribe",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug UltraTranscribe"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:ultra-meet-v2}",
+            "name": "Release UltraTranscribe",
+            "target": "UltraTranscribe",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release UltraTranscribe"
+        }
+    ]
+}

@@ -5,28 +5,43 @@ import SwiftUI
 
 struct SettingsView: View {
     @ObservedObject var state: AppState
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var body: some View {
         HStack(spacing: 0) {
-            sidebar.frame(width: 196).background(Theme.background.ignoresSafeArea())
+            sidebar
+                .frame(width: 208)
+                .sidebarSurface()
             Divider().ignoresSafeArea()
             ScrollView {
-                Group {
-                    switch state.settingsPane {
-                    case .general: GeneralSettings(state: state)
-                    case .recording: RecordingSettings(state: state)
-                    case .transcription: TranscriptionSettings(state: state)
-                    case .analysis: AnalysisSettings(state: state)
-                    case .storage: StorageSettings(state: state)
-                    case .credits: CreditsSettings(state: state)
+                VStack(alignment: .leading, spacing: 24) {
+                    HStack(spacing: 9) {
+                        Image(systemName: state.settingsPane.symbol)
+                            .font(.system(size: 16, weight: .medium))
+                            .symbolRenderingMode(.hierarchical)
+                            .foregroundStyle(Theme.orange)
+                            .frame(width: 22)
+                        Text(state.settingsPane.title)
+                            .font(.system(size: 20, weight: .semibold))
+                    }
+                    Group {
+                        switch state.settingsPane {
+                        case .general: GeneralSettings(state: state)
+                        case .recording: RecordingSettings(state: state)
+                        case .transcription: TranscriptionSettings(state: state)
+                        case .analysis: AnalysisSettings(state: state)
+                        case .storage: StorageSettings(state: state)
+                        case .credits: CreditsSettings(state: state)
+                        }
                     }
                 }
                 .id(state.settingsPane)
-                .transition(.opacity.animation(.easeOut(duration: 0.14)))
+                .transition(reduceMotion ? .identity : .opacity.animation(.easeOut(duration: 0.14)))
                 .frame(maxWidth: 540)
-                .padding(.horizontal, 32).padding(.vertical, 26)
-                .frame(maxWidth: .infinity)
+                .padding(.horizontal, 32)
+                .padding(.vertical, 30)
+                .frame(maxWidth: .infinity, alignment: .top)
             }
-            .background(Theme.paper.ignoresSafeArea())
+            .background(Theme.background.ignoresSafeArea())
         }
         .tint(Theme.orange)
         .frame(minWidth: 720, minHeight: 520)
@@ -40,21 +55,21 @@ struct SettingsView: View {
             }
             .padding(.horizontal, 10).padding(.top, 8).padding(.bottom, 14)
             ForEach(SettingsPane.allCases) { pane in
-                Button { withAnimation(Theme.selection) { state.settingsPane = pane } } label: {
+                Button { withAnimation(reduceMotion ? nil : Theme.selection) { state.settingsPane = pane } } label: {
                     HStack(spacing: 9) {
                         Image(systemName: pane.symbol).font(.system(size: 12, weight: .medium))
                             .foregroundStyle(state.settingsPane == pane ? Theme.orange : Theme.secondary).frame(width: 18)
                         Text(pane.title).font(.system(size: 13, weight: state.settingsPane == pane ? .semibold : .regular))
                         Spacer()
                     }
-                    .padding(.horizontal, 10).frame(height: 30).contentShape(Rectangle())
+                    .padding(.horizontal, 10).frame(height: 34).contentShape(Rectangle())
                 }
                 .buttonStyle(RowStyle(selected: state.settingsPane == pane))
                 .accessibilityAddTraits(state.settingsPane == pane ? .isSelected : [])
             }
             Spacer()
         }
-        .padding(.horizontal, 10)
+        .padding(.horizontal, 10).padding(.vertical, 4)
     }
 }
 
@@ -244,6 +259,7 @@ struct TranscriptionSettings: View {
 /// The three local speech models with memory, speed and install state, plus the download control.
 struct SpeechModelList: View {
     @ObservedObject var state: AppState
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// Setup offers the download as its main button instead.
     var offersDownload = true
     var recommended: ASRModel { ASRModel.recommended(forMemory: ProcessInfo.processInfo.physicalMemory) }
@@ -273,11 +289,11 @@ struct SpeechModelList: View {
     }
     func row(_ model: ASRModel) -> some View {
         let selected = state.preferences.model == model
-        return Button { withAnimation(Theme.feedback) { state.preferences.model = model } } label: {
+        return Button { withAnimation(reduceMotion ? nil : Theme.feedback) { state.preferences.model = model } } label: {
             HStack(alignment: .center, spacing: 12) {
                 ZStack {
                     Circle().strokeBorder(selected ? Theme.orange : Theme.secondary.opacity(0.4), lineWidth: 1.5).frame(width: 16, height: 16)
-                    if selected { Circle().fill(Theme.orange).frame(width: 8, height: 8).transition(.scale) }
+                    if selected { Circle().fill(Theme.orange).frame(width: 8, height: 8).transition(reduceMotion ? .identity : .scale) }
                 }
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(spacing: 7) {
@@ -345,6 +361,7 @@ struct StorageSettings: View {
 
 struct CreditsSettings: View {
     @ObservedObject var state: AppState
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     private static let icon = LogoGlyph.appIcon(size: 192)
     static let website = URL(string: "https://ultra.achraf.tn")!
     static let author = URL(string: "https://achraf.tn")!
@@ -356,7 +373,7 @@ struct CreditsSettings: View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(spacing: 10) {
                 Image(nsImage: Self.icon).resizable().frame(width: 96, height: 96)
-                    .scaleEffect(hovering ? 1.04 : 1).animation(.snappy(duration: 0.25), value: hovering)
+                    .scaleEffect(reduceMotion || !hovering ? 1 : 1.04).animation(reduceMotion ? nil : .snappy(duration: 0.25), value: hovering)
                     .onHover { hovering = $0 }
                     .accessibilityHidden(true)
                 Text("Ultra Transcribe").font(.system(size: 20, weight: .semibold)).tracking(-0.4)
@@ -375,7 +392,7 @@ struct CreditsSettings: View {
                 RowDivider()
                 SettingsToggle(title: "Check automatically", detail: "Once a day; tells you when a new version is out.", isOn: $state.preferences.checkForUpdates)
             }
-            .animation(Theme.feedback, value: updater.state)
+            .animation(reduceMotion ? nil : Theme.feedback, value: updater.state)
             SettingsSection(title: "Links") {
                 SettingsRow(title: "Website", detail: "ultra.achraf.tn") {
                     Link(destination: Self.website) { linkLabel("Open") }.buttonStyle(ControlStyle(compact: true))

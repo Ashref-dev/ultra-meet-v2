@@ -13,33 +13,34 @@ struct MenuBarPanel: View {
             Group {
                 if let meeting = state.active { LiveCard(state: state, meeting: meeting) } else { ReadyCard(state: state) }
             }
-            .padding(16)
+            .padding(18)
             .frame(maxWidth: .infinity, alignment: .leading)
             .card()
-            .padding(.horizontal, 10)
+            .padding(.horizontal, 12)
             .transition(.opacity.combined(with: .scale(scale: 0.98)))
-            if let error = state.error { banner(error).padding(.horizontal, 10).padding(.top, 8) }
+            if let error = state.error { banner(error).padding(.horizontal, 12).padding(.top, 10) }
             if let release = state.updater.available, !recording {
                 InlineHint(symbol: "arrow.down.circle", text: "Ultra Transcribe \(release.version?.description ?? release.tag) is available.", action: ("Update", { state.showSettings(.credits) }))
-                    .padding(.horizontal, 10).padding(.top, 8)
+                    .padding(.horizontal, 12).padding(.top, 10)
             }
             DotWaveform(meter: state.recorder.levels, live: recording, paused: state.recorder.paused)
                 .frame(height: 66)
-                .padding(.horizontal, 6)
-                .padding(.top, 8)
-            RecorderControls(state: state).padding(.horizontal, 14).padding(.top, 4).padding(.bottom, 12)
+                .padding(.horizontal, 8)
+                .padding(.top, 10)
+            RecorderControls(state: state).padding(.horizontal, 16).padding(.top, 6).padding(.bottom, 14)
             if !recording && !recent.isEmpty { recentList }
         }
         .frame(width: 380)
-        .background(Theme.background)
+        .popoverSurface()
         .tint(Theme.orange)
         .animation(reduceMotion ? nil : Theme.selection, value: recording)
         .animation(reduceMotion ? nil : Theme.feedback, value: state.error)
     }
     var header: some View {
-        HStack(spacing: 8) {
-            LogoMark(size: 12)
-            MonoLabel("Ultra Transcribe")
+        HStack(spacing: 9) {
+            LogoMark(size: 13)
+            Text("Ultra Transcribe")
+                .font(.system(size: 13, weight: .semibold))
             Spacer()
             if recording {
                 HStack(spacing: 5) {
@@ -47,7 +48,10 @@ struct MenuBarPanel: View {
                         .opacity(state.recorder.paused || reduceMotion || pulse ? 1 : 0.35)
                     MonoLabel(state.recorder.paused ? "Paused" : "Rec", color: state.recorder.paused ? Theme.secondary : Theme.orange)
                 }
-                .onAppear { withAnimation(.easeInOut(duration: 0.9).repeatForever()) { pulse.toggle() } }
+                .onAppear {
+                    guard !reduceMotion else { pulse = true; return }
+                    withAnimation(.easeInOut(duration: 0.9).repeatForever()) { pulse.toggle() }
+                }
             }
             Menu {
                 if recording {
@@ -61,14 +65,15 @@ struct MenuBarPanel: View {
                 Divider()
                 Button("Quit Ultra Transcribe") { NSApp.terminate(nil) }
             } label: {
-                Image(systemName: "ellipsis").font(.system(size: 12, weight: .semibold)).frame(width: 26, height: 22).contentShape(Rectangle())
+                Image(systemName: "ellipsis").font(.system(size: 12, weight: .semibold)).frame(width: 28, height: 24).contentShape(Rectangle())
             }
             .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize()
+            .glassSurface(cornerRadius: Theme.controlRadius, interactive: true)
             .focusEffectDisabled()
             .foregroundStyle(Theme.secondary)
             .help("More").accessibilityLabel("More options")
         }
-        .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 10)
+        .padding(.horizontal, 16).padding(.top, 14).padding(.bottom, 12)
     }
     func banner(_ message: String) -> some View {
         HStack(alignment: .top, spacing: 8) {
@@ -120,7 +125,7 @@ private struct ReadyCard: View {
             if !state.engine.ready(state.preferences.model) && !state.engine.busy {
                 Button { state.showSettings(.transcription) } label: {
                     Label("Install the speech model to get transcripts", systemImage: "arrow.down.circle").font(.system(size: 11.5))
-                }.buttonStyle(.link)
+                }.buttonStyle(.plain).foregroundStyle(Theme.orange)
             }
         }
     }
@@ -166,6 +171,7 @@ private struct Participants: View {
 /// Split bar of speaking time: green for you, orange for colleagues.
 private struct TalkShare: View {
     @ObservedObject var meter: LevelMeter
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let source: AudioSource
     var body: some View {
         let share = meter.youShare
@@ -181,7 +187,7 @@ private struct TalkShare: View {
                 }
             }
             .frame(height: 5)
-            .animation(.easeOut(duration: 0.4), value: share)
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.4), value: share)
             HStack {
                 MonoLabel(share.map { "You \(Int(($0 * 100).rounded()))%" } ?? (source.usesMicrophone ? "You" : "You · off"), color: Theme.you)
                 Spacer()
@@ -197,6 +203,7 @@ private struct TalkShare: View {
 /// The last lines of the live transcript, newest at the bottom.
 private struct LiveLines: View {
     let lines: [TranscriptSegment]
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             MonoLabel("Live transcript", color: Theme.secondary.opacity(0.8))
@@ -211,10 +218,10 @@ private struct LiveLines: View {
                         .multilineTextAlignment(line.isRightToLeft ? .trailing : .leading)
                         .frame(maxWidth: .infinity, alignment: line.isRightToLeft ? .trailing : .leading)
                 }
-                .transition(.move(edge: .bottom).combined(with: .opacity))
+                .transition(reduceMotion ? .identity : .move(edge: .bottom).combined(with: .opacity))
             }
         }
-        .animation(Theme.selection, value: lines.count)
+        .animation(reduceMotion ? nil : Theme.selection, value: lines.count)
     }
 }
 
@@ -237,7 +244,17 @@ private struct HealthHints: View {
 /// Press feedback without chrome, for custom tiles.
 struct PressStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label.scaleEffect(configuration.isPressed ? 0.97 : 1).animation(Theme.feedback, value: configuration.isPressed)
+        PressBody(configuration: configuration)
+    }
+    private struct PressBody: View {
+        let configuration: ButtonStyleConfiguration
+        @Environment(\.accessibilityReduceMotion) private var reduceMotion
+        var body: some View {
+            configuration.label
+                .scaleEffect(reduceMotion || !configuration.isPressed ? 1 : 0.97)
+                .opacity(configuration.isPressed ? 0.82 : 1)
+                .animation(reduceMotion ? nil : Theme.feedback, value: configuration.isPressed)
+        }
     }
 }
 
@@ -248,15 +265,17 @@ struct RowStyle: ButtonStyle {
     private struct RowBody: View {
         let configuration: ButtonStyleConfiguration
         let selected: Bool
+        @Environment(\.accessibilityReduceMotion) private var reduceMotion
         @State private var hovering = false
         var body: some View {
             configuration.label
-                .background(selected ? Theme.paper : hovering || configuration.isPressed ? Theme.line.opacity(0.7) : .clear, in: RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous).strokeBorder(selected ? Theme.line : .clear))
-                .shadow(color: selected ? .black.opacity(0.04) : .clear, radius: 4, y: 1)
+                .background(
+                    selected ? Theme.selectionFill : hovering || configuration.isPressed ? Theme.line.opacity(0.55) : .clear,
+                    in: RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous)
+                )
                 .onHover { hovering = $0 }
-                .animation(Theme.feedback, value: hovering)
-                .animation(Theme.feedback, value: selected)
+                .animation(reduceMotion ? nil : Theme.feedback, value: hovering)
+                .animation(reduceMotion ? nil : Theme.feedback, value: selected)
         }
     }
 }

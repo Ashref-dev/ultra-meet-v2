@@ -10,7 +10,9 @@ Ultra Transcribe lives in the menu bar. Click the dot-matrix icon for the record
 
 **Transcript.** The conversation map shows when each side spoke; click it, a timestamp or a line to play both sides from there, at up to 2×. Double-click a line to fix a typo; Return or clicking away saves, Esc cancels. Underlined lines were hard to hear. Right-click a line to copy it or transcribe it again as another language; new names in a correction can be added to Names and terms. If a meeting's audio was deleted, the transcript says so and stays readable.
 
-**Library.** Search titles, transcripts and notes; accents and Arabic spelling variants are ignored. Copy copies the current tab; Export saves everything as Markdown. Audio of transcribed meetings is deleted after the retention period in Settings → Storage; transcripts and notes are kept.
+**Library.** Search titles, transcripts and notes; accents and Arabic spelling variants are ignored. Swipe left on a row to reveal its round Trash button, then click and confirm to move the meeting and its audio to the Finder Trash. Recording and processing meetings cannot be trashed. Copy copies the current tab; Export saves everything as Markdown. Audio of transcribed meetings is deleted after the retention period in Settings → Storage; transcripts and notes are kept.
+
+**Appearance.** Settings → General offers System, Light and Dark. Controls use native Liquid Glass on macOS 26 and later, including macOS 27; transcripts and notes stay opaque. macOS accessibility settings reduce transparency and motion or increase contrast. Use the library toolbar's sidebar button or ⌃⌘S to show or hide the meeting list.
 
 **Updates.** Settings → Credits checks GitHub for new versions and installs them after verifying the signature; the app also checks daily and notifies you. Settings → General → Run Again reopens the first-run setup.
 

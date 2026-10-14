@@ -18,19 +18,27 @@ struct MeetingDetail: View {
     var body: some View {
         VStack(spacing: 0) {
             header
-            TabStrip(tabs: Self.tabs, selection: $tab).padding(.horizontal, 22)
+            TabStrip(tabs: Self.tabs, selection: $tab).padding(.horizontal, 26)
             Divider()
             if let error = meeting.error, !isActive { notice(error) }
-            content.frame(maxWidth: .infinity, maxHeight: .infinity)
+            content
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Theme.paper)
                 .id(tab)
-                .transition(.opacity.animation(.easeOut(duration: 0.14)))
+                .transition(reduceMotion ? .identity : .opacity.animation(.easeOut(duration: 0.14)))
             if playback.duration > 0 { PlayerBar(playback: playback, clock: playback.clock) }
             if isActive {
                 VStack(spacing: 0) {
                     Divider()
-                    DotWaveform(meter: state.recorder.levels, live: true, paused: state.recorder.paused).frame(height: 50).padding(.horizontal, 20).padding(.top, 10)
-                    RecorderControls(state: state).padding(.horizontal, 28).padding(.vertical, 12)
-                }.background(Theme.background)
+                    DotWaveform(meter: state.recorder.levels, live: true, paused: state.recorder.paused)
+                        .frame(height: 46)
+                        .padding(.horizontal, 24)
+                        .padding(.top, 10)
+                    RecorderControls(state: state)
+                    .padding(.horizontal, 28)
+                    .padding(.vertical, 10)
+                }
+                .background(Theme.paper)
             }
         }
         .background(Theme.paper)
@@ -60,12 +68,16 @@ struct MeetingDetail: View {
             HStack(spacing: 8) {
                 StatusBadge(meeting: meeting)
                 Spacer()
-                Button { copyContent() } label: { Label(copied ? "Copied" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc").contentTransition(.symbolEffect(.replace)) }
-                    .buttonStyle(ControlStyle(compact: true)).animation(reduceMotion ? nil : Theme.feedback, value: copied)
-                    .help("Copy the \(tab.lowercased())")
-                Button { state.export(meeting) } label: { Label("Export", systemImage: "square.and.arrow.up") }
-                    .buttonStyle(ControlStyle(compact: true)).help("Export everything as Markdown")
-                actions
+                GlassControls {
+                    HStack(spacing: 8) {
+                        Button { copyContent() } label: { Label(copied ? "Copied" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc").contentTransition(reduceMotion ? .identity : .symbolEffect(.replace)) }
+                            .buttonStyle(ControlStyle(compact: true)).animation(reduceMotion ? nil : Theme.feedback, value: copied)
+                            .help("Copy the \(tab.lowercased())")
+                        Button { state.export(meeting) } label: { Label("Export", systemImage: "square.and.arrow.up") }
+                            .buttonStyle(ControlStyle(compact: true)).help("Export everything as Markdown")
+                        actions
+                    }
+                }
             }
             EditableTitle(title: meeting.title, size: 26) { state.rename(meeting.id, to: $0) }
                 .padding(.top, 8)
@@ -296,15 +308,20 @@ private struct PlayerBar: View {
     @ObservedObject var playback: AudioPlayback
     @ObservedObject var clock: AudioPlayback.Clock
     @State private var scrub: Double?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 10) {
             Button { playback.togglePause() } label: {
-                Image(systemName: playback.playing ? "pause.fill" : "play.fill").font(.system(size: 11, weight: .bold)).frame(width: 14)
-                    .contentTransition(.symbolEffect(.replace))
+                Image(systemName: playback.playing ? "pause.fill" : "play.fill")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(Theme.orange)
+                    .frame(width: 16)
+                    .contentTransition(reduceMotion ? .identity : .symbolEffect(.replace))
             }
-            .buttonStyle(ControlStyle(compact: true))
+            .buttonStyle(ControlStyle(kind: .quiet, compact: true))
             .accessibilityLabel(playback.playing ? "Pause playback" : "Resume playback")
             MonoLabel(playback.sources.map { $0 == "microphone" ? "You" : $0 == "system" ? "Colleagues" : "Recording" }.joined(separator: " + "))
+                .lineLimit(1)
             Text(Meeting.timestamp(scrub ?? clock.position)).font(Theme.mono).monospacedDigit()
             Slider(value: Binding(get: { scrub ?? clock.position }, set: { scrub = $0 }), in: 0...max(1, playback.duration)) { editing in
                 guard !editing, let target = scrub else { return }
@@ -318,9 +335,12 @@ private struct PlayerBar: View {
             Button { playback.stop() } label: { Image(systemName: "xmark").font(.system(size: 10, weight: .bold)) }
                 .buttonStyle(ControlStyle(kind: .quiet, compact: true)).help("Close the player").accessibilityLabel("Stop playback")
         }
-        .padding(.horizontal, 32).padding(.vertical, 10)
-        .background(Theme.background)
-        .overlay(alignment: .top) { Divider() }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+        .glassSurface(cornerRadius: Theme.radius, interactive: true)
+        .padding(.horizontal, 20)
+        .padding(.vertical, 10)
+        .background(Theme.paper)
     }
 }
 
@@ -345,10 +365,13 @@ struct AnalysisView: View {
                 Text("Turn this conversation into notes").font(.system(size: 18, weight: .semibold))
                 Text("Summary, decisions, and action items for you and your colleagues.").font(.system(size: 13)).foregroundStyle(Theme.secondary)
                 if let failure { failureView(failure) }
-                HStack(spacing: 8) {
-                    TemplatePicker(state: state)
-                    analyzeButton
-                }.padding(.top, 4)
+                GlassControls {
+                    HStack(spacing: 8) {
+                        TemplatePicker(state: state)
+                        analyzeButton
+                    }
+                }
+                .padding(.top, 4)
                 MonoLabel("Sends the transcript and your notes as text to OpenRouter · never audio")
             }
             .padding(28).frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -358,9 +381,13 @@ struct AnalysisView: View {
                     HStack(spacing: 8) {
                         MonoLabel([meeting.analysisTemplate, meeting.analysisModel.map { $0.components(separatedBy: "/").last ?? $0 }, meeting.analyzedAt?.formatted(.dateTime.day().month(.abbreviated).hour().minute())].compactMap { $0 }.joined(separator: " · "))
                         Spacer()
-                        TemplatePicker(state: state)
-                        Button { state.analyze(meeting.id) } label: { Label("Re-analyze", systemImage: "arrow.clockwise") }
-                            .buttonStyle(ControlStyle(compact: true)).disabled(state.analyzingID != nil || meeting.segments.isEmpty)
+                        GlassControls {
+                            HStack(spacing: 8) {
+                                TemplatePicker(state: state)
+                                Button { state.analyze(meeting.id) } label: { Label("Re-analyze", systemImage: "arrow.clockwise") }
+                                    .buttonStyle(ControlStyle(compact: true)).disabled(state.analyzingID != nil || meeting.segments.isEmpty)
+                            }
+                        }
                     }
                     if let failure { failureView(failure) }
                     if meeting.notesStale == true {
