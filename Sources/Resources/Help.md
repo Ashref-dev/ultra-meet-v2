@@ -12,7 +12,7 @@ Ultra Transcribe lives in the menu bar. Click the dot-matrix icon for the record
 
 **Library.** Search titles, transcripts and notes; accents and Arabic spelling variants are ignored. Swipe left on a row to reveal its round Trash button, then click and confirm to move the meeting and its audio to the Finder Trash. Recording and processing meetings cannot be trashed. Copy copies the current tab; Export saves everything as Markdown. Audio of transcribed meetings is deleted after the retention period in Settings → Storage; transcripts and notes are kept.
 
-**Appearance.** Settings → General offers System, Light and Dark. Controls use native Liquid Glass on macOS 26 and later, including macOS 27; transcripts and notes stay opaque. macOS accessibility settings reduce transparency and motion or increase contrast. Use the library toolbar's sidebar button or ⌃⌘S to show or hide the meeting list.
+**Appearance.** Settings → General offers System, Light and Dark; macOS settings for reduced transparency, increased contrast and reduced motion are followed. ⌃⌘S or the toolbar button shows and hides the library sidebar.
 
 **Updates.** Settings → Credits checks GitHub for new versions and installs them after verifying the signature; the app also checks daily and notifies you. Settings → General → Run Again reopens the first-run setup.
 

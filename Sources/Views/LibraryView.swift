@@ -44,7 +44,6 @@ struct LibraryView: View {
             .background(Theme.paper.ignoresSafeArea())
         }
         .animation(reduceMotion ? nil : Theme.selection, value: collapsed)
-        .tint(Theme.orange)
         .frame(minWidth: collapsed ? 560 : 820, minHeight: 560)
         .alert("Something needs your attention", isPresented: Binding(get: { state.error != nil }, set: { if !$0 { state.error = nil } })) {
             Button("OK") { state.error = nil }
@@ -56,16 +55,18 @@ struct LibraryView: View {
         } message: { Text("You can restore it from the Finder Trash until it’s emptied.") }
     }
     var sidebar: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 9) {
-                LogoMark(size: 14)
-                Text("Ultra Transcribe").font(.system(size: 14, weight: .semibold))
+        // Filtering folds every transcript, so it runs once per render, not once per use.
+        let results = filtered
+        return VStack(spacing: 0) {
+            HStack(spacing: 8) {
+                LogoMark(size: 13)
+                Text("Ultra Transcribe").font(.system(size: 13, weight: .semibold))
                 Spacer()
                 Button { state.showSettings(.general) } label: { Image(systemName: "gearshape") }
-                    .buttonStyle(ControlStyle(kind: .quiet, compact: true)).help("Settings (⌘,)").accessibilityLabel("Settings")
+                    .buttonStyle(ControlStyle(kind: .quiet, compact: true, square: true)).help("Settings (⌘,)").accessibilityLabel("Settings")
             }
-            .padding(.leading, 18).padding(.trailing, 12).padding(.top, 16).padding(.bottom, 20)
-            GlassControls {
+            .padding(.leading, 16).padding(.trailing, 12).padding(.top, 8).padding(.bottom, 16)
+            Group {
                 if let active = state.active {
                     Button { state.selectedID = active.id } label: {
                         HStack(spacing: 8) {
@@ -77,23 +78,14 @@ struct LibraryView: View {
                     }.buttonStyle(ControlStyle(expand: true))
                 } else {
                     Button { state.startRecording() } label: {
-                        HStack(spacing: 8) { Circle().fill(.white).frame(width: 7, height: 7); Text(state.starting ? "Starting" : "Start recording") }
+                        RecordLabel(title: state.starting ? "Starting" : "Start recording", busy: state.starting) { Circle().fill(.white).frame(width: 7, height: 7) }
                     }.buttonStyle(ControlStyle(kind: .primary, expand: true)).disabled(!state.canStart)
                 }
             }
-            .padding(.horizontal, 14)
-            HStack(spacing: 7) {
-                Image(systemName: "magnifyingglass").font(.system(size: 11)).foregroundStyle(Theme.secondary)
-                TextField("Search meetings", text: $state.search).textFieldStyle(.plain).font(.system(size: 12.5))
-                if !state.search.isEmpty {
-                    Button { state.search = "" } label: { Image(systemName: "xmark.circle.fill") }.buttonStyle(.plain).foregroundStyle(Theme.secondary).accessibilityLabel("Clear search")
-                }
-            }
-            .padding(.horizontal, 12).frame(height: Theme.controlHeight)
-            .background(Theme.paper.opacity(0.7), in: RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous).strokeBorder(Theme.line.opacity(0.5)))
-            .padding(.horizontal, 14).padding(.top, 10).padding(.bottom, 8)
-            List(filtered) { meeting in
+            .padding(.horizontal, 12)
+            SearchField(prompt: "Search meetings", text: $state.search)
+                .padding(.horizontal, 12).padding(.top, 8).padding(.bottom, 8)
+            List(results) { meeting in
                 Button { state.selectedID = meeting.id } label: {
                     VStack(alignment: .leading, spacing: 6) {
                         MeetingRow(state: state, meeting: meeting)
@@ -106,12 +98,12 @@ struct LibraryView: View {
                             }
                         }
                     }
-                    .padding(.horizontal, 12).padding(.vertical, 11)
+                    .padding(.horizontal, 12).padding(.vertical, 12)
                 }
                 .buttonStyle(RowStyle(selected: meeting.id == state.selectedID))
                 .accessibilityAddTraits(meeting.id == state.selectedID ? .isSelected : [])
                 .selectionDisabled()
-                .listRowInsets(EdgeInsets(top: 1, leading: 8, bottom: 1, trailing: 8))
+                .listRowInsets(EdgeInsets(top: 1, leading: 10, bottom: 1, trailing: 10))
                 .listRowSeparator(.hidden)
                 .listRowBackground(Color.clear)
                 .swipeActions(edge: .trailing, allowsFullSwipe: false) {
@@ -138,14 +130,14 @@ struct LibraryView: View {
             .scrollContentBackground(.hidden)
             .environment(\.defaultMinListRowHeight, 0)
             .overlay {
-                if filtered.isEmpty && !state.meetings.isEmpty { Text("No matches").font(.system(size: 12)).foregroundStyle(Theme.secondary) }
+                if results.isEmpty && !state.meetings.isEmpty { Text("No matches").font(.system(size: 12)).foregroundStyle(Theme.secondary) }
             }
         }
     }
     var emptyState: some View {
-        VStack(spacing: 18) {
+        VStack(spacing: 16) {
             DotWaveform(meter: state.recorder.levels).frame(width: 320, height: 64)
-            Text("Nothing recorded yet").font(.system(size: 22, weight: .semibold)).tracking(-0.4)
+            Text("Nothing recorded yet").font(.system(size: 20, weight: .semibold)).tracking(-0.4)
             Text("Start from here or from the menu bar. Meetings name themselves.").font(.system(size: 13)).foregroundStyle(Theme.secondary)
             Button { state.startRecording() } label: { Text("Start recording") }.buttonStyle(ControlStyle(kind: .primary)).disabled(!state.canStart)
         }

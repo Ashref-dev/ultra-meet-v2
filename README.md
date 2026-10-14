@@ -42,9 +42,7 @@ Updates: Settings → Credits checks for new releases and installs them in place
 
 ### macOS appearance
 
-The recorder, library, settings and setup use native macOS materials, rounded controls and an orange accent. On macOS 26 and later, including macOS 27, action controls use Liquid Glass. Transcripts, notes and settings cards stay opaque for reading. Light, Dark and System appearance are in Settings → General. Reduce Transparency and Increase Contrast use solid control surfaces; Reduce Motion removes control transitions and the travelling progress pulse.
-
-The library's native toolbar button or ⌃⌘S shows and hides the sidebar. macOS 15 remains supported with standard materials instead of Liquid Glass.
+Native macOS materials and, on macOS 26 and later, Liquid Glass controls over a warm paper palette with an orange accent; Reduce Transparency, Increase Contrast and Reduce Motion are honored. Light, Dark or System is in Settings → General.
 
 ## Speech models
 
@@ -79,7 +77,7 @@ On a 12-minute English and Saudi Arabic meeting, limiting detection to English a
 
 ## Build from source
 
-Use full Xcode and install `uv` (`brew install uv`) before building. If `xcode-select -p` points to Command Line Tools, prefix the build command with `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer`; the macOS 27 SwiftUI macros require the full Xcode toolchain.
+Building needs full Xcode (not only the Command Line Tools) and `uv` (`brew install uv`).
 
 ```sh
 swift test

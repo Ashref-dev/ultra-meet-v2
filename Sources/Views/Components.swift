@@ -13,30 +13,38 @@ struct MonoLabel: View {
 
 enum ControlKind { case primary, secondary, quiet }
 
-/// Shared action chrome. Glass belongs on controls, not on the text people read.
+/// Shared button chrome: orange glass primary, clear glass secondary, borderless quiet. `square` fits one icon.
 struct ControlStyle: ButtonStyle {
     var kind: ControlKind = .secondary
     var expand = false
     var compact = false
+    var square = false
     func makeBody(configuration: Configuration) -> some View {
-        ControlBody(configuration: configuration, kind: kind, expand: expand, compact: compact)
+        ControlBody(configuration: configuration, kind: kind, expand: expand, compact: compact, square: square)
     }
     private struct ControlBody: View {
         let configuration: ButtonStyleConfiguration
         let kind: ControlKind
         let expand: Bool
         let compact: Bool
+        let square: Bool
         @Environment(\.isEnabled) private var enabled
         @Environment(\.accessibilityReduceMotion) private var reduceMotion
         @State private var hovering = false
-        var shape: RoundedRectangle { RoundedRectangle(cornerRadius: (compact ? Theme.compactControlHeight : Theme.controlHeight) / 2, style: .continuous) }
+        var height: CGFloat { compact ? Theme.compactControlHeight : Theme.controlHeight }
+        var foreground: Color {
+            if kind == .primary { return .white }
+            if configuration.role == .destructive { return Theme.destructive }
+            return kind == .quiet && !hovering ? Theme.secondary : .primary
+        }
         var body: some View {
+            let shape = RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous)
             configuration.label
                 .font(.system(size: compact ? 11.5 : 12.5, weight: .semibold))
                 .lineLimit(1)
-                .foregroundStyle(kind == .primary ? Color.white : kind == .quiet ? (hovering ? Color.primary : Theme.secondary) : Color.primary)
-                .padding(.horizontal, kind == .quiet ? 7 : compact ? 10 : 14)
-                .frame(height: compact ? Theme.compactControlHeight : Theme.controlHeight)
+                .foregroundStyle(foreground)
+                .padding(.horizontal, square ? 0 : kind == .quiet ? 8 : compact ? 10 : 12)
+                .frame(width: square ? height : nil, height: height)
                 .frame(maxWidth: expand ? .infinity : nil)
                 .modifier(ControlChrome(kind: kind, shape: shape, pressed: configuration.isPressed, hovering: hovering, enabled: enabled))
                 .contentShape(shape)
@@ -58,31 +66,52 @@ private struct ControlChrome: ViewModifier {
 
     @ViewBuilder func body(content: Content) -> some View {
         if kind == .quiet {
-            content.background(hovering || pressed ? Theme.line.opacity(0.5) : .clear, in: shape)
+            content.background(hovering || pressed ? Theme.line : .clear, in: shape)
         } else {
-            content.glassSurface(cornerRadius: shape.cornerSize.width,
+            content.glassSurface(cornerRadius: Theme.controlRadius,
                                  tint: kind == .primary ? (pressed ? Theme.ember : Theme.orange) : nil,
                                  interactive: enabled)
         }
     }
 }
 
-/// Icon-only action with the shared glass chrome and an accessible name.
+/// Square icon button with an accessible name.
 struct IconButton: View {
     let symbol: String
     let label: String
     let action: () -> Void
     var body: some View {
         Button(action: action) {
-            Image(systemName: symbol).font(.system(size: 11, weight: .bold)).frame(width: 14).contentTransition(.symbolEffect(.replace))
+            Image(systemName: symbol).font(.system(size: 11, weight: .bold)).contentTransition(.symbolEffect(.replace))
         }
-        .buttonStyle(ControlStyle(kind: .secondary))
+        .buttonStyle(ControlStyle(square: true))
         .help(label)
         .accessibilityLabel(label)
     }
 }
 
-/// Compact on/off pill, used for language choices.
+/// The ellipsis menu for secondary actions.
+struct MoreMenu<Items: View>: View {
+    let label: String
+    @ViewBuilder let items: Items
+    var body: some View {
+        Menu { items } label: { Image(systemName: "ellipsis").font(.system(size: 12, weight: .semibold)) }
+            .menuStyle(.button).buttonStyle(ControlStyle(compact: true, square: true)).menuIndicator(.hidden).fixedSize()
+            .focusEffectDisabled()
+            .help(label).accessibilityLabel(label)
+    }
+}
+
+/// Button label for links that leave the app.
+struct LinkLabel: View {
+    let title: String
+    init(_ title: String) { self.title = title }
+    var body: some View {
+        HStack(spacing: 4) { Text(title); Image(systemName: "arrow.up.right").font(.system(size: 8.5, weight: .bold)) }
+    }
+}
+
+/// Compact on/off chip, used for language choices.
 struct ToggleChip: View {
     let title: String
     @Binding var isOn: Bool
@@ -90,19 +119,21 @@ struct ToggleChip: View {
     @State private var hovering = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var body: some View {
+        let shape = RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous)
         Button { withAnimation(reduceMotion ? nil : Theme.feedback) { isOn.toggle() } } label: {
             HStack(spacing: 6) {
                 Image(systemName: isOn ? "checkmark" : "plus").font(.system(size: 8.5, weight: .bold))
                     .foregroundStyle(isOn ? color : Theme.secondary).contentTransition(.symbolEffect(.replace))
                 Text(title).font(.system(size: 12, weight: isOn ? .semibold : .regular)).foregroundStyle(isOn ? Color.primary : Theme.secondary)
             }
-            .padding(.horizontal, 11).frame(height: Theme.compactControlHeight)
-            .background(isOn ? color.opacity(0.12) : hovering ? Theme.line.opacity(0.35) : .clear, in: Capsule())
-            .overlay(Capsule().strokeBorder(isOn ? color.opacity(0.45) : Theme.line))
-            .contentShape(Rectangle())
+            .padding(.horizontal, 10).frame(height: Theme.compactControlHeight)
+            .background(isOn ? color.opacity(0.12) : hovering ? Theme.line.opacity(0.5) : .clear, in: shape)
+            .overlay(shape.strokeBorder(isOn ? color.opacity(0.45) : Theme.line))
+            .contentShape(shape)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(PressStyle())
         .onHover { hovering = $0 }
+        .animation(reduceMotion ? nil : Theme.feedback, value: hovering)
         .accessibilityLabel(title)
         .accessibilityValue(isOn ? "On" : "Off")
         .accessibilityAddTraits(.isToggle)
@@ -153,7 +184,7 @@ struct Shake: GeometryEffect {
 
 struct TabItem: Identifiable, Hashable { let id: String; let symbol: String }
 
-/// Content tabs stay on the reading surface; the selected capsule marks the current pane.
+/// Content tabs with a sliding orange selection.
 struct TabStrip: View {
     let tabs: [TabItem]
     @Binding var selection: String
@@ -168,17 +199,19 @@ struct TabStrip: View {
                         Text(tab.id).font(.system(size: 12.5, weight: selection == tab.id ? .semibold : .medium))
                     }
                     .foregroundStyle(selection == tab.id ? Theme.orange : Theme.secondary)
-                    .padding(.horizontal, 14)
+                    .padding(.horizontal, 12)
                     .frame(height: Theme.controlHeight)
                     .background {
                         if selection == tab.id {
-                            Capsule().fill(Theme.selectionFill).matchedGeometryEffect(id: "tab", in: indicator)
+                            RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous)
+                                .fill(Theme.selectionFill).matchedGeometryEffect(id: "tab", in: indicator)
                         }
                     }
                     .fixedSize()
                     .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(PressStyle())
+                .focusEffectDisabled()
                 .accessibilityAddTraits(selection == tab.id ? [.isSelected, .isButton] : .isButton)
             }
             Spacer(minLength: 0)
@@ -186,11 +219,75 @@ struct TabStrip: View {
     }
 }
 
+/// Press feedback without chrome, for custom tiles.
+struct PressStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        PressBody(configuration: configuration)
+    }
+    private struct PressBody: View {
+        let configuration: ButtonStyleConfiguration
+        @Environment(\.accessibilityReduceMotion) private var reduceMotion
+        var body: some View {
+            configuration.label
+                .scaleEffect(reduceMotion || !configuration.isPressed ? 1 : 0.97)
+                .opacity(configuration.isPressed ? 0.82 : 1)
+                .animation(reduceMotion ? nil : Theme.feedback, value: configuration.isPressed)
+        }
+    }
+}
+
+/// Hover, press and selected highlight for list rows that behave like buttons.
+struct RowStyle: ButtonStyle {
+    var selected = false
+    func makeBody(configuration: Configuration) -> some View { RowBody(configuration: configuration, selected: selected) }
+    private struct RowBody: View {
+        let configuration: ButtonStyleConfiguration
+        let selected: Bool
+        @Environment(\.accessibilityReduceMotion) private var reduceMotion
+        @State private var hovering = false
+        var body: some View {
+            configuration.label
+                .background(
+                    selected ? Theme.selectionFill : hovering || configuration.isPressed ? Theme.line.opacity(0.6) : .clear,
+                    in: RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous)
+                )
+                .contentShape(Rectangle())
+                .onHover { hovering = $0 }
+                .animation(reduceMotion ? nil : Theme.feedback, value: hovering)
+                .animation(reduceMotion ? nil : Theme.selection, value: selected)
+        }
+    }
+}
+
+/// Single-line search with a clear button.
+struct SearchField: View {
+    let prompt: String
+    @Binding var text: String
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass").font(.system(size: 11)).foregroundStyle(Theme.secondary)
+            TextField(prompt, text: $text).textFieldStyle(.plain).font(.system(size: 12.5))
+            if !text.isEmpty {
+                Button { text = "" } label: { Image(systemName: "xmark.circle.fill") }
+                    .buttonStyle(.plain).foregroundStyle(Theme.secondary).accessibilityLabel("Clear search")
+            }
+        }
+        .padding(.horizontal, 10).frame(height: Theme.controlHeight)
+        .field()
+    }
+}
+
 extension View {
-    /// Opaque grouped content keeps transcripts and settings readable beside translucent chrome.
+    /// Paper surface with a hairline border, for grouped content.
     func card() -> some View {
         background(Theme.paper, in: RoundedRectangle(cornerRadius: Theme.radius, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: Theme.radius, style: .continuous).strokeBorder(Theme.line.opacity(0.5)))
+            .overlay(RoundedRectangle(cornerRadius: Theme.radius, style: .continuous).strokeBorder(Theme.line))
+    }
+    /// Text input surface; focus is drawn in orange, never the system ring.
+    func field(focused: Bool = false) -> some View {
+        background(Theme.paper, in: RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous)
+                .strokeBorder(focused ? Theme.orange.opacity(0.55) : Theme.line, lineWidth: focused ? 1.5 : 1))
     }
     func glassSurface(cornerRadius: CGFloat = Theme.radius, tint: Color? = nil, interactive: Bool = false) -> some View {
         modifier(GlassSurface(cornerRadius: cornerRadius, tint: tint, interactive: interactive))
@@ -199,12 +296,12 @@ extension View {
     func popoverSurface() -> some View { background { ChromeSurface(material: .popover).ignoresSafeArea() } }
 }
 
-/// A single effect container lets related controls share the system's glass renderer.
+/// Neighboring glass controls share one renderer, so they blend instead of stacking.
 struct GlassControls<Content: View>: View {
     @ViewBuilder let content: Content
     var body: some View {
         if #available(macOS 26.0, *) {
-            GlassEffectContainer(spacing: 4) { content }
+            GlassEffectContainer(spacing: 8) { content }
         } else {
             content
         }
@@ -217,24 +314,22 @@ private struct GlassSurface: ViewModifier {
     let interactive: Bool
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.colorSchemeContrast) private var contrast
-    var shape: RoundedRectangle { RoundedRectangle(cornerRadius: cornerRadius, style: .continuous) }
 
     @ViewBuilder func body(content: Content) -> some View {
+        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
         if reduceTransparency || contrast == .increased {
             content.background(tint ?? Theme.paper, in: shape)
                 .overlay(shape.strokeBorder(Theme.secondary.opacity(0.6)))
         } else if #available(macOS 26.0, *) {
             content.glassEffect(.regular.tint(tint).interactive(interactive), in: shape)
-        } else if let tint {
-            content.background(tint, in: shape)
-                .overlay(shape.strokeBorder(Theme.line))
         } else {
-            content.background(.regularMaterial, in: shape)
+            content.background(tint.map(AnyShapeStyle.init) ?? AnyShapeStyle(.regularMaterial), in: shape)
                 .overlay(shape.strokeBorder(Theme.line))
         }
     }
 }
 
+/// Native translucent chrome with a light warm wash, so sidebars and the panel sit in the paper palette.
 private struct ChromeSurface: View {
     let material: NSVisualEffectView.Material
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
@@ -243,7 +338,7 @@ private struct ChromeSurface: View {
         if reduceTransparency || contrast == .increased {
             Theme.background
         } else {
-            NativeMaterial(material: material)
+            NativeMaterial(material: material).overlay(Theme.background.opacity(0.4))
         }
     }
 }
@@ -258,36 +353,74 @@ private struct NativeMaterial: NSViewRepresentable {
         return view
     }
     func updateNSView(_ view: NSVisualEffectView, context: Context) {
-        view.material = material
+        if view.material != material { view.material = material }
     }
 }
+
+// MARK: Surfaces
+
+/// Whether a reused window or the popover is on screen. Hidden surfaces keep their views (so opening is instant)
+/// but stop redrawing live audio and progress nobody can see.
+@MainActor
+final class Visibility: NSObject, ObservableObject {
+    @Published var shown = false
+    func follow(_ window: NSWindow) {
+        NotificationCenter.default.addObserver(self, selector: #selector(occlusionChanged), name: NSWindow.didChangeOcclusionStateNotification, object: window)
+    }
+    @objc private func occlusionChanged(_ notification: Notification) {
+        shown = (notification.object as? NSWindow)?.occlusionState.contains(.visible) == true
+    }
+}
+
+extension EnvironmentValues {
+    @Entry var offscreen = false
+}
+
+extension LevelMeter {
+    /// A meter that never changes, observed instead of the live one while a surface is hidden.
+    static let still = LevelMeter()
+}
+
+/// Root of every window and the popover: the orange accent everywhere, and live visuals paused while hidden.
+struct SurfaceRoot<Content: View>: View {
+    @ObservedObject var visibility: Visibility
+    let content: Content
+    var body: some View {
+        content.tint(Theme.orange).environment(\.offscreen, !visibility.shown)
+    }
+}
+
+// MARK: Content
 
 /// Meeting name that reads as a heading and edits in place. Hover reveals a field and a pencil.
 struct EditableTitle: View {
     let title: String
-    var size: CGFloat = 24
+    var size: CGFloat = 26
     let rename: (String) -> Void
     @State private var hovering = false
     @FocusState private var focused: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var body: some View {
+        let shape = RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous)
         HStack(alignment: .firstTextBaseline, spacing: 8) {
             // Wraps instead of clipping long AI titles; Return still finishes the rename.
             TextField("Meeting name", text: Binding(get: { title }, set: rename), axis: .vertical)
                 .textFieldStyle(.plain).lineLimit(1...3)
                 .font(.system(size: size, weight: .semibold)).tracking(size > 20 ? -0.5 : -0.3)
                 .focused($focused)
+                .focusEffectDisabled()
                 .onSubmit { focused = false }
             Image(systemName: "pencil").font(.system(size: size * 0.5, weight: .semibold))
                 .foregroundStyle(focused ? Theme.orange : Theme.secondary)
                 .opacity(hovering || focused ? 1 : 0)
                 .offset(x: hovering || focused ? 0 : -4)
         }
-        .padding(.horizontal, 7).padding(.vertical, 3)
-        .background(RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous).fill(focused ? Theme.paper : hovering ? Theme.line.opacity(0.55) : .clear))
-        .overlay(RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous).strokeBorder(focused ? Theme.orange.opacity(0.55) : .clear, lineWidth: 1.5))
-        .padding(.horizontal, -7)
-        .animation(Theme.feedback, value: hovering)
-        .animation(Theme.feedback, value: focused)
+        .padding(.horizontal, 8).padding(.vertical, 4)
+        .background(shape.fill(focused ? Theme.paper : hovering ? Theme.line.opacity(0.6) : .clear))
+        .overlay(shape.strokeBorder(focused ? Theme.orange.opacity(0.55) : .clear, lineWidth: 1.5))
+        .padding(.horizontal, -8)
+        .animation(reduceMotion ? nil : Theme.feedback, value: hovering)
+        .animation(reduceMotion ? nil : Theme.feedback, value: focused)
         .onHover { hovering = $0 }
         .help("Click to rename")
         .accessibilityLabel("Meeting name")
@@ -299,6 +432,7 @@ struct SpeakerAvatar: View {
     let source: String
     var size: CGFloat = 24
     var level: Float = 0
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var body: some View {
         let color = Theme.speakerColor(source)
         Text(source == "microphone" ? "Y" : source == "system" ? "C" : "S")
@@ -306,7 +440,7 @@ struct SpeakerAvatar: View {
             .frame(width: size, height: size)
             .background(color, in: Circle())
             .background(Circle().fill(color.opacity(0.25)).scaleEffect(1 + CGFloat(min(level, 1)) * 0.55))
-            .animation(.easeOut(duration: 0.12), value: level)
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: level)
             .accessibilityHidden(true)
     }
 }
@@ -317,9 +451,10 @@ struct DotProgress: View {
     var dots = 32
     var color: Color = Theme.orange
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.offscreen) private var offscreen
     var body: some View {
         let value = self.value.flatMap { $0 > 0 ? $0 : nil }
-        TimelineView(.animation(minimumInterval: 0.08, paused: value != nil || reduceMotion)) { timeline in
+        TimelineView(.animation(minimumInterval: 0.08, paused: value != nil || reduceMotion || offscreen)) { timeline in
             Canvas { context, size in
                 let pitch = size.width / CGFloat(dots)
                 let diameter = min(pitch * 0.62, size.height)
@@ -340,12 +475,26 @@ struct DotProgress: View {
 
 /// Dot-matrix waveform. Recording: real level history scrolling right-to-left, deep green to green where you speak
 /// and ember to orange where colleagues speak, dark at the center line and lighter toward the edges. Idle: a quiet
-/// ember-to-orange shape on the lattice.
+/// ember-to-orange shape on the lattice. Only a visible, live waveform follows the meter.
 struct DotWaveform: View {
-    @ObservedObject var meter: LevelMeter
+    let meter: LevelMeter
     var live = false
     var paused = false
     var spacing: CGFloat = 6
+    @Environment(\.offscreen) private var offscreen
+    var body: some View {
+        DotMatrix(meter: live && !offscreen ? meter : .still, live: live, spacing: spacing)
+            .opacity(paused ? 0.4 : 1)
+            .animation(Theme.feedback, value: paused)
+            .accessibilityElement()
+            .accessibilityLabel(live ? (paused ? "Recording paused" : "Live audio levels") : "Waveform")
+    }
+}
+
+private struct DotMatrix: View {
+    @ObservedObject var meter: LevelMeter
+    let live: Bool
+    let spacing: CGFloat
     var body: some View {
         Canvas { context, size in
             let columns = Int(size.width / spacing)
@@ -372,10 +521,6 @@ struct DotWaveform: View {
                 }
             }
         }
-        .opacity(paused ? 0.4 : 1)
-        .animation(Theme.feedback, value: paused)
-        .accessibilityElement()
-        .accessibilityLabel(live ? (paused ? "Recording paused" : "Live audio levels") : "Waveform")
     }
     private func idleReach(_ column: Int, columns: Int, middle: Double) -> Double {
         let edge = min(column, columns - 1 - column)
@@ -393,42 +538,44 @@ struct SwitchKnob: View {
     var body: some View {
         ZStack(alignment: isOn ? .trailing : .leading) {
             Capsule().fill(isOn ? color : Theme.secondary.opacity(0.25))
-            Circle().fill(.white).frame(width: 14, height: 14).padding(3).shadow(color: Theme.controlShadow, radius: 1)
+            Circle().fill(.white).frame(width: 12, height: 12).padding(2).shadow(color: Theme.controlShadow, radius: 1, y: 0.5)
         }
-        .frame(width: 32, height: 20)
+        .frame(width: 28, height: 16)
         .animation(reduceMotion ? nil : Theme.selection, value: isOn)
         .accessibilityHidden(true)
     }
 }
 
-/// Compact grouped choices with a sliding, opaque selection thumb.
+/// Segmented choice with a sliding paper thumb, inset concentrically in the track.
 struct Segmented<Value: Hashable>: View {
     let options: [(Value, String)]
     @Binding var selection: Value
     @Namespace private var thumb
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    private static var inset: CGFloat { 2 }
     var body: some View {
-        HStack(spacing: 2) {
+        HStack(spacing: 0) {
             ForEach(options, id: \.0) { value, title in
                 Button { withAnimation(reduceMotion ? nil : Theme.selection) { selection = value } } label: {
                     Text(title).font(.system(size: 11.5, weight: selection == value ? .semibold : .regular))
                         .foregroundStyle(selection == value ? Color.primary : Theme.secondary)
-                        .padding(.horizontal, 11).frame(height: Theme.compactControlHeight)
+                        .padding(.horizontal, 10).frame(height: Theme.compactControlHeight - Self.inset * 2)
                         .background {
                             if selection == value {
-                                Capsule().fill(Theme.paper)
-                                    .shadow(color: Theme.controlShadow, radius: 2, y: 1)
+                                RoundedRectangle(cornerRadius: Theme.controlRadius - Self.inset, style: .continuous).fill(Theme.paper)
+                                    .shadow(color: Theme.controlShadow, radius: 1.5, y: 0.5)
                                     .matchedGeometryEffect(id: "thumb", in: thumb)
                             }
                         }
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .focusEffectDisabled()
                 .accessibilityAddTraits(selection == value ? [.isSelected, .isButton] : .isButton)
             }
         }
-        .padding(3)
-        .background(Theme.line.opacity(0.35), in: Capsule())
+        .padding(Self.inset)
+        .background(Theme.line, in: RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous))
     }
 }
 
@@ -436,13 +583,13 @@ struct Segmented<Value: Hashable>: View {
 struct KeyCaps: View {
     let keys: [String]
     var body: some View {
-        HStack(spacing: 3) {
+        HStack(spacing: 4) {
             ForEach(keys, id: \.self) { key in
                 Text(key).font(.system(size: 10.5, weight: .medium, design: .monospaced))
-                    .frame(minWidth: 18, minHeight: 18).padding(.horizontal, 3)
+                    .frame(minWidth: 18, minHeight: 18).padding(.horizontal, 4)
                     .background(Theme.paper, in: RoundedRectangle(cornerRadius: Theme.chipRadius, style: .continuous))
                     .overlay(RoundedRectangle(cornerRadius: Theme.chipRadius, style: .continuous).strokeBorder(Theme.line))
-                    .shadow(color: .black.opacity(0.06), radius: 0, y: 1)
+                    .shadow(color: Theme.controlShadow, radius: 0, y: 1)
             }
         }
         .accessibilityLabel(keys.joined())

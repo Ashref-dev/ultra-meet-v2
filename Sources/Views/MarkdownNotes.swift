@@ -1,7 +1,8 @@
 import SwiftUI
 
 /// Renders the small Markdown subset the analysis prompt asks for: headings, bullets, task checkboxes and inline emphasis.
-struct MarkdownNotes: View {
+/// Equatable so parent updates (timers, progress) skip re-parsing unchanged notes.
+struct MarkdownNotes: View, Equatable {
     let text: String
     var body: some View {
         VStack(alignment: .leading, spacing: 9) {
@@ -11,7 +12,7 @@ struct MarkdownNotes: View {
                     MonoLabel(String(line.dropFirst(4)), color: .primary).padding(.top, 8)
                 } else if line.hasPrefix("#") {
                     Text(line.drop(while: { $0 == "#" || $0 == " " }))
-                        .font(.system(size: line.hasPrefix("# ") ? 21 : 16, weight: .semibold)).tracking(-0.2)
+                        .font(.system(size: line.hasPrefix("# ") ? 20 : 16, weight: .semibold)).tracking(-0.2)
                         .padding(.top, 16).padding(.bottom, 2)
                 } else if let task = taskText(line) {
                     HStack(alignment: .firstTextBaseline, spacing: 9) {

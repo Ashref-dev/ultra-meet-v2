@@ -19,6 +19,8 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, UNUserNotifica
     private var library: NSWindow?
     private var settings: NSWindow?
     private var setup: NSWindow?
+    /// One per window, so a closed or hidden window stops drawing live audio while keeping its views for reopening.
+    private var visibility: [ObjectIdentifier: Visibility] = [:]
     private var quitting = false
     private static let sidebarItem = NSToolbarItem.Identifier("UltraTranscribe.ToggleSidebar")
 
@@ -60,7 +62,7 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, UNUserNotifica
     }
     func showSetup() {
         statusBar?.closePanel()
-        setup?.close()
+        if let setup { setup.close(); visibility[ObjectIdentifier(setup)] = nil }
         let window = makeWindow(title: "Welcome to Ultra Transcribe", size: NSSize(width: 580, height: 560), autosave: "Setup", root: SetupView(state: state) { [weak self] in
             self?.setup?.close()
             self?.statusBar?.showPanel()
@@ -100,6 +102,8 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, UNUserNotifica
         present(window)
     }
     private func present(_ window: NSWindow) {
+        // Shown before ordering front, so the first frame already draws live content.
+        visibility[ObjectIdentifier(window)]?.shown = true
         NSApp.unhide(nil)
         if window.isMiniaturized { window.deminiaturize(nil) }
         NSApp.activate()
@@ -113,6 +117,8 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, UNUserNotifica
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
         window.isReleasedWhenClosed = false
+        // Painted before SwiftUI's first frame, so opening never flashes the system gray.
+        window.backgroundColor = Theme.backgroundColor
         if autosave != "Setup" {
             let toolbar = NSToolbar(identifier: autosave)
             toolbar.delegate = self
@@ -120,7 +126,10 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, UNUserNotifica
             window.toolbar = toolbar
             window.toolbarStyle = .unified
         }
-        window.contentViewController = NSHostingController(rootView: root)
+        let surface = Visibility()
+        surface.follow(window)
+        visibility[ObjectIdentifier(window)] = surface
+        window.contentViewController = NSHostingController(rootView: SurfaceRoot(visibility: surface, content: root))
         window.setContentSize(size)
         window.center()
         window.setFrameAutosaveName(autosave)

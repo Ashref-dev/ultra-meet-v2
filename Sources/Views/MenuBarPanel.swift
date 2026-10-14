@@ -13,37 +13,38 @@ struct MenuBarPanel: View {
             Group {
                 if let meeting = state.active { LiveCard(state: state, meeting: meeting) } else { ReadyCard(state: state) }
             }
-            .padding(18)
+            .padding(16)
             .frame(maxWidth: .infinity, alignment: .leading)
             .card()
             .padding(.horizontal, 12)
             .transition(.opacity.combined(with: .scale(scale: 0.98)))
-            if let error = state.error { banner(error).padding(.horizontal, 12).padding(.top, 10) }
+            if let error = state.error {
+                InlineHint(symbol: "exclamationmark.circle.fill", text: error, dismiss: { state.error = nil })
+                    .padding(.horizontal, 12).padding(.top, 8)
+            }
             if let release = state.updater.available, !recording {
                 InlineHint(symbol: "arrow.down.circle", text: "Ultra Transcribe \(release.version?.description ?? release.tag) is available.", action: ("Update", { state.showSettings(.credits) }))
-                    .padding(.horizontal, 12).padding(.top, 10)
+                    .padding(.horizontal, 12).padding(.top, 8)
             }
             DotWaveform(meter: state.recorder.levels, live: recording, paused: state.recorder.paused)
-                .frame(height: 66)
-                .padding(.horizontal, 8)
-                .padding(.top, 10)
-            RecorderControls(state: state).padding(.horizontal, 16).padding(.top, 6).padding(.bottom, 14)
+                .frame(height: 64)
+                .padding(.horizontal, 12)
+                .padding(.top, 12)
+            RecorderControls(state: state).padding(.horizontal, 16).padding(.top, 8).padding(.bottom, 16)
             if !recording && !recent.isEmpty { recentList }
         }
         .frame(width: 380)
         .popoverSurface()
-        .tint(Theme.orange)
         .animation(reduceMotion ? nil : Theme.selection, value: recording)
         .animation(reduceMotion ? nil : Theme.feedback, value: state.error)
     }
     var header: some View {
-        HStack(spacing: 9) {
+        HStack(spacing: 8) {
             LogoMark(size: 13)
-            Text("Ultra Transcribe")
-                .font(.system(size: 13, weight: .semibold))
+            Text("Ultra Transcribe").font(.system(size: 13, weight: .semibold))
             Spacer()
             if recording {
-                HStack(spacing: 5) {
+                HStack(spacing: 6) {
                     Circle().fill(state.recorder.paused ? Theme.secondary : Theme.orange).frame(width: 6, height: 6)
                         .opacity(state.recorder.paused || reduceMotion || pulse ? 1 : 0.35)
                     MonoLabel(state.recorder.paused ? "Paused" : "Rec", color: state.recorder.paused ? Theme.secondary : Theme.orange)
@@ -53,7 +54,7 @@ struct MenuBarPanel: View {
                     withAnimation(.easeInOut(duration: 0.9).repeatForever()) { pulse.toggle() }
                 }
             }
-            Menu {
+            MoreMenu(label: "More options") {
                 if recording {
                     Button("Microphone Mode…") { AVCaptureDevice.showSystemUserInterface(.microphoneModes) }
                     Divider()
@@ -64,87 +65,76 @@ struct MenuBarPanel: View {
                 Button("Settings…") { state.showSettings(.general) }
                 Divider()
                 Button("Quit Ultra Transcribe") { NSApp.terminate(nil) }
-            } label: {
-                Image(systemName: "ellipsis").font(.system(size: 12, weight: .semibold)).frame(width: 28, height: 24).contentShape(Rectangle())
             }
-            .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize()
-            .glassSurface(cornerRadius: Theme.controlRadius, interactive: true)
-            .focusEffectDisabled()
-            .foregroundStyle(Theme.secondary)
-            .help("More").accessibilityLabel("More options")
         }
-        .padding(.horizontal, 16).padding(.top, 14).padding(.bottom, 12)
-    }
-    func banner(_ message: String) -> some View {
-        HStack(alignment: .top, spacing: 8) {
-            Image(systemName: "exclamationmark.circle.fill").foregroundStyle(Theme.orange)
-            Text(message).font(.system(size: 11.5)).fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
-            Spacer(minLength: 0)
-            Button { state.error = nil } label: { Image(systemName: "xmark").font(.system(size: 9, weight: .bold)) }
-                .buttonStyle(.plain).foregroundStyle(Theme.secondary).accessibilityLabel("Dismiss")
-        }
-        .padding(10)
-        .background(Theme.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous))
+        .padding(.leading, 16).padding(.trailing, 12).padding(.vertical, 12)
     }
     var recent: [Meeting] { Array(state.meetings.prefix(3)) }
     var recentList: some View {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: 4) {
             Divider().padding(.bottom, 8)
             HStack {
                 MonoLabel("Recent")
                 Spacer()
-                Button { state.showMeeting(nil) } label: {
-                    HStack(spacing: 5) { Text("All meetings"); Image(systemName: "arrow.up.right").font(.system(size: 8.5, weight: .bold)) }
-                }
-                .buttonStyle(ControlStyle(compact: true))
+                Button { state.showMeeting(nil) } label: { LinkLabel("All meetings") }
+                    .buttonStyle(ControlStyle(kind: .quiet, compact: true))
             }
-            .padding(.horizontal, 16)
+            .padding(.leading, 16).padding(.trailing, 8)
             ForEach(recent) { meeting in
                 Button { state.showMeeting(meeting.id) } label: {
-                    MeetingRow(state: state, meeting: meeting).padding(.horizontal, 10).padding(.vertical, 8)
+                    MeetingRow(state: state, meeting: meeting).padding(.horizontal, 8).padding(.vertical, 8)
                 }
                 .buttonStyle(RowStyle())
-                .padding(.horizontal, 6)
+                .padding(.horizontal, 8)
             }
         }
-        .padding(.bottom, 10)
+        .padding(.bottom, 8)
     }
 }
 
 /// Idle card: title, date and who gets recorded.
 private struct ReadyCard: View {
     @ObservedObject var state: AppState
+    /// `LocalEngine.ready` reads files, so it is checked on open and when an install starts or ends, not every render.
+    @State private var modelMissing = false
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .firstTextBaseline) {
-                Text("Ready to record").font(.system(size: 19, weight: .semibold)).tracking(-0.4)
+                Text("Ready to record").font(.system(size: 18, weight: .semibold)).tracking(-0.4)
                 Spacer()
                 MonoLabel(Date().formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated)))
             }
             SourcePicker(state: state)
-            if !state.engine.ready(state.preferences.model) && !state.engine.busy {
+            if modelMissing && !state.engine.busy {
                 Button { state.showSettings(.transcription) } label: {
                     Label("Install the speech model to get transcripts", systemImage: "arrow.down.circle").font(.system(size: 11.5))
-                }.buttonStyle(.plain).foregroundStyle(Theme.orange)
+                }
+                .buttonStyle(PressStyle()).foregroundStyle(Theme.orange)
             }
         }
+        .onAppear(perform: checkModel)
+        .onChange(of: state.engine.busy) { _, _ in checkModel() }
+        .onChange(of: state.preferences.model) { _, _ in checkModel() }
     }
+    func checkModel() { modelMissing = !state.engine.ready(state.preferences.model) }
 }
 
 /// Live card: name, participants, talk share and a quick note.
 private struct LiveCard: View {
     @ObservedObject var state: AppState
     let meeting: Meeting
+    @Environment(\.offscreen) private var offscreen
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .center, spacing: 10) {
+        let meter = offscreen ? LevelMeter.still : state.recorder.levels
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .center, spacing: 8) {
                 EditableTitle(title: meeting.title, size: 18) { state.rename(meeting.id, to: $0) }
                 Spacer(minLength: 4)
-                Participants(meter: state.recorder.levels, source: meeting.source)
+                Participants(meter: meter, source: meeting.source)
             }
             MonoLabel("Started \(meeting.createdAt.formatted(.dateTime.hour().minute())) · \(meeting.createdAt.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated)))")
-            TalkShare(meter: state.recorder.levels, source: meeting.source)
-            HealthHints(meter: state.recorder.levels, source: meeting.source)
+            TalkShare(meter: meter, source: meeting.source)
+            HealthHints(meter: meter, source: meeting.source)
             if state.liveID == meeting.id { LiveLines(lines: state.engine.partial) }
             NoteEditor(text: Binding(get: { meeting.notes }, set: { value in state.update(meeting.id) { $0.notes = value } }), placeholder: "Jot a note…")
                 .frame(height: 96)
@@ -211,7 +201,7 @@ private struct LiveLines: View {
                 Text("Lines appear as people finish sentences.").font(.system(size: 12)).foregroundStyle(Theme.secondary)
             }
             ForEach(lines.suffix(3)) { line in
-                HStack(alignment: .firstTextBaseline, spacing: 7) {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Circle().fill(Theme.speakerColor(line.source)).frame(width: 6, height: 6).accessibilityLabel(line.speaker)
                     Text(line.text).font(.system(size: 12)).lineLimit(2)
                         .foregroundStyle(line.isUncertain ? Theme.secondary : Color.primary)
@@ -238,44 +228,5 @@ private struct HealthHints: View {
     }
     func openSound() {
         if let url = URL(string: "x-apple.systempreferences:com.apple.Sound-Settings.extension") { NSWorkspace.shared.open(url) }
-    }
-}
-
-/// Press feedback without chrome, for custom tiles.
-struct PressStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        PressBody(configuration: configuration)
-    }
-    private struct PressBody: View {
-        let configuration: ButtonStyleConfiguration
-        @Environment(\.accessibilityReduceMotion) private var reduceMotion
-        var body: some View {
-            configuration.label
-                .scaleEffect(reduceMotion || !configuration.isPressed ? 1 : 0.97)
-                .opacity(configuration.isPressed ? 0.82 : 1)
-                .animation(reduceMotion ? nil : Theme.feedback, value: configuration.isPressed)
-        }
-    }
-}
-
-/// Hover, press and selected highlight for list rows that behave like buttons.
-struct RowStyle: ButtonStyle {
-    var selected = false
-    func makeBody(configuration: Configuration) -> some View { RowBody(configuration: configuration, selected: selected) }
-    private struct RowBody: View {
-        let configuration: ButtonStyleConfiguration
-        let selected: Bool
-        @Environment(\.accessibilityReduceMotion) private var reduceMotion
-        @State private var hovering = false
-        var body: some View {
-            configuration.label
-                .background(
-                    selected ? Theme.selectionFill : hovering || configuration.isPressed ? Theme.line.opacity(0.55) : .clear,
-                    in: RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous)
-                )
-                .onHover { hovering = $0 }
-                .animation(reduceMotion ? nil : Theme.feedback, value: hovering)
-                .animation(reduceMotion ? nil : Theme.feedback, value: selected)
-        }
     }
 }

@@ -37,9 +37,10 @@ struct SpeakerBlockView: View {
     /// Starts at the end of the line: focusing a field selects everything, and one keystroke would replace the line.
     @State private var selection: TextSelection?
     @FocusState private var focused: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var body: some View {
         let color = Theme.speakerColor(block.source)
-        HStack(alignment: .top, spacing: 14) {
+        HStack(alignment: .top, spacing: 12) {
             VStack(spacing: 6) {
                 SpeakerAvatar(source: block.source, size: 26)
                 Capsule().fill(color.opacity(0.22)).frame(width: 2).frame(maxHeight: .infinity)
@@ -72,6 +73,7 @@ struct SpeakerBlockView: View {
                         .textFieldStyle(.plain).font(.system(size: 14)).lineSpacing(5)
                         .multilineTextAlignment(segment.isRightToLeft ? .trailing : .leading)
                         .focused($focused)
+                        .focusEffectDisabled()
                         .onSubmit { commit(segment) }
                         .onExitCommand { editingID = nil }
                         .onChange(of: focused) { _, isFocused in
@@ -110,8 +112,8 @@ struct SpeakerBlockView: View {
         .onHover { inside in
             if inside { hoveredID = segment.id } else if hoveredID == segment.id { hoveredID = nil }
         }
-        .animation(Theme.feedback, value: playingID)
-        .animation(Theme.feedback, value: hoveredID)
+        .animation(reduceMotion ? nil : Theme.feedback, value: playingID)
+        .animation(reduceMotion ? nil : Theme.feedback, value: hoveredID)
         .id(segment.id)
         .contextMenu {
             if let actions {
@@ -227,15 +229,15 @@ struct InlineHint: View {
     var body: some View {
         HStack(alignment: .center, spacing: 8) {
             Image(systemName: symbol).font(.system(size: 11, weight: .semibold)).foregroundStyle(Theme.orange)
-            Text(text).font(.system(size: 11.5)).fixedSize(horizontal: false, vertical: true)
+            Text(text).font(.system(size: 11.5)).fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
             Spacer(minLength: 4)
             if let action { Button(action.title, action: action.run).buttonStyle(ControlStyle(compact: true)) }
             if let dismiss {
                 Button(action: dismiss) { Image(systemName: "xmark").font(.system(size: 9, weight: .bold)) }
-                    .buttonStyle(.plain).foregroundStyle(Theme.secondary).accessibilityLabel("Dismiss")
+                    .buttonStyle(ControlStyle(kind: .quiet, compact: true, square: true)).help("Dismiss").accessibilityLabel("Dismiss")
             }
         }
-        .padding(.horizontal, 10).padding(.vertical, 8)
+        .padding(.leading, 12).padding(.trailing, 8).padding(.vertical, 8)
         .background(Theme.orange.opacity(0.07), in: RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous))
     }
 }

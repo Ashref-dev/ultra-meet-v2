@@ -9,7 +9,10 @@ struct MeetingDetail: View {
     @StateObject private var playback = AudioPlayback()
     @State private var copied = false
     @State private var playingLineID: UUID?
+    /// Listed from the meeting folder when it changes, not on every render; `nil` until the first listing.
+    @State private var listedAudio: [URL]?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.offscreen) private var offscreen
     var isActive: Bool { meeting.id == state.activeID }
     var isLive: Bool { meeting.id == state.liveID }
     var isTranscribing: Bool { meeting.id == state.processingID || meeting.id == state.pendingID || state.queued.contains(meeting.id) }
@@ -18,30 +21,31 @@ struct MeetingDetail: View {
     var body: some View {
         VStack(spacing: 0) {
             header
-            TabStrip(tabs: Self.tabs, selection: $tab).padding(.horizontal, 26)
+            TabStrip(tabs: Self.tabs, selection: $tab).padding(.horizontal, 12).padding(.bottom, 8)
             Divider()
             if let error = meeting.error, !isActive { notice(error) }
             content
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(Theme.paper)
                 .id(tab)
-                .transition(reduceMotion ? .identity : .opacity.animation(.easeOut(duration: 0.14)))
+                .transition(reduceMotion ? .identity : .opacity.animation(Theme.feedback))
             if playback.duration > 0 { PlayerBar(playback: playback, clock: playback.clock) }
             if isActive {
                 VStack(spacing: 0) {
                     Divider()
                     DotWaveform(meter: state.recorder.levels, live: true, paused: state.recorder.paused)
-                        .frame(height: 46)
+                        .frame(height: 48)
                         .padding(.horizontal, 24)
-                        .padding(.top, 10)
+                        .padding(.top, 12)
                     RecorderControls(state: state)
-                    .padding(.horizontal, 28)
-                    .padding(.vertical, 10)
+                        .padding(.horizontal, 24)
+                        .padding(.vertical, 12)
                 }
-                .background(Theme.paper)
             }
         }
         .background(Theme.paper)
+        .onChange(of: AudioFolder(id: meeting.id, deleted: meeting.audioDeleted, status: meeting.status, offscreen: offscreen), initial: true) { _, folder in
+            if !folder.offscreen { listedAudio = listAudio() }
+        }
         .onChange(of: meeting.id) { _, _ in playback.stop(); copied = false; tab = "Transcript" }
         .onChange(of: tab) { _, _ in copied = false }
         .onChange(of: state.activeID) { _, id in if id != nil { playback.stop() } }
@@ -81,7 +85,7 @@ struct MeetingDetail: View {
             }
             EditableTitle(title: meeting.title, size: 26) { state.rename(meeting.id, to: $0) }
                 .padding(.top, 8)
-            HStack(spacing: 14) {
+            HStack(spacing: 12) {
                 MonoLabel(meeting.createdAt.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated).year().hour().minute()))
                 MonoLabel(Meeting.timestamp(isActive ? state.elapsed : meeting.duration))
                 Spacer()
@@ -93,14 +97,14 @@ struct MeetingDetail: View {
                 }
             }
         }
-        .padding(.horizontal, 32).padding(.top, 26).padding(.bottom, 14)
+        .padding(.horizontal, 24).padding(.top, 24).padding(.bottom, 16)
     }
     var speakers: [String] {
         let sources = Set(meeting.segments.map(\.source))
         return ["microphone", "system", "imported"].filter(sources.contains)
     }
     var actions: some View {
-        Menu {
+        MoreMenu(label: "More actions") {
             Button("Analyze with AI") { tab = "AI notes"; state.analyze(meeting.id) }.disabled(meeting.segments.isEmpty || state.analyzingID != nil)
             Button("Transcribe Again") { state.transcribe(meeting.id) }.disabled(!canSeek || isTranscribing || isLive)
             Divider()
@@ -114,14 +118,10 @@ struct MeetingDetail: View {
             Button("Show in Finder") { NSWorkspace.shared.open(state.library.folder(meeting.id)) }
             Divider()
             Button("Delete Audio…", role: .destructive) { deleteAudioConfirmation = true }.disabled(isActive || isTranscribing || meeting.audioDeleted)
-        } label: {
-            Image(systemName: "ellipsis").font(.system(size: 12, weight: .semibold)).frame(width: 30, height: 26).contentShape(Rectangle())
         }
-        .menuStyle(.button).buttonStyle(ControlStyle(compact: true)).menuIndicator(.hidden).fixedSize()
-        .help("More actions").accessibilityLabel("More actions")
     }
     func notice(_ message: String) -> some View {
-        HStack(alignment: .top, spacing: 10) {
+        HStack(alignment: .top, spacing: 8) {
             Image(systemName: "exclamationmark.circle").foregroundStyle(Theme.orange)
             Text(message).font(.system(size: 12)).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
             Spacer()
@@ -129,7 +129,7 @@ struct MeetingDetail: View {
                 Button("Transcribe Again") { state.transcribe(meeting.id) }.buttonStyle(ControlStyle(compact: true))
             }
         }
-        .padding(.horizontal, 32).padding(.vertical, 12).background(Theme.orange.opacity(0.06))
+        .padding(.horizontal, 24).padding(.vertical, 12).background(Theme.orange.opacity(0.07))
     }
 
     // MARK: Content
@@ -137,7 +137,7 @@ struct MeetingDetail: View {
     @ViewBuilder var content: some View {
         switch tab {
         case "My notes":
-            NoteEditor(text: Binding(get: { meeting.notes }, set: { value in state.update(meeting.id) { $0.notes = value } }), placeholder: "Anything worth remembering…", fontSize: 14, inset: CGSize(width: 27, height: 24), fade: 22, framed: false)
+            NoteEditor(text: Binding(get: { meeting.notes }, set: { value in state.update(meeting.id) { $0.notes = value } }), placeholder: "Anything worth remembering…", fontSize: 14, inset: CGSize(width: 19, height: 24), fade: 24, framed: false)
         case "AI notes":
             AnalysisView(state: state, meeting: meeting)
         default:
@@ -180,7 +180,7 @@ struct MeetingDetail: View {
                         SpeakerBlockView(block: block, playingID: playingLineID, redoingID: state.redoingLineID, showLanguage: meeting.languages.count > 1, actions: lineActions)
                     }
                 }
-                .padding(.horizontal, 32).padding(.vertical, 24)
+                .padding(.horizontal, 24).padding(.vertical, 24)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .animation(reduceMotion ? nil : Theme.feedback, value: state.termSuggestion)
             }
@@ -208,7 +208,7 @@ struct MeetingDetail: View {
                     ForEach(SpeakerBlock.group(inProgress)) { SpeakerBlockView(block: $0, showLanguage: Set(inProgress.compactMap(\.language)).count > 1) }
                     Color.clear.frame(height: 1).id("end")
                 }
-                .padding(.horizontal, 32).padding(.vertical, 24)
+                .padding(.horizontal, 24).padding(.vertical, 24)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             .onChange(of: inProgress.count) { _, _ in withAnimation(reduceMotion ? nil : Theme.selection) { proxy.scrollTo("end", anchor: .bottom) } }
@@ -233,13 +233,13 @@ struct MeetingDetail: View {
                 }
             }
         }
-        .padding(28).frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(24).frame(maxWidth: .infinity, maxHeight: .infinity)
     }
     var canSeek: Bool { !meeting.audioDeleted && !isActive && !audioFiles.isEmpty }
     /// Why the recording can't be played, so a click on a line never fails silently.
     var audioNotice: String? {
         if meeting.audioDeleted { return "This meeting’s audio was deleted, by you or by the audio retention setting, so it can’t be played or transcribed again. The transcript and notes are kept." }
-        if audioFiles.isEmpty && meeting.status != .recording { return "This meeting’s audio files are missing from its folder. They may have been moved or deleted, so the meeting can’t be played or transcribed again. The transcript and notes are kept." }
+        if listedAudio?.isEmpty == true && meeting.status != .recording { return "This meeting’s audio files are missing from its folder. They may have been moved or deleted, so the meeting can’t be played or transcribed again. The transcript and notes are kept." }
         return nil
     }
     var lineActions: LineActions {
@@ -258,7 +258,9 @@ struct MeetingDetail: View {
 
     // MARK: Audio
 
-    var audioFiles: [URL] {
+    var audioFiles: [URL] { listedAudio ?? [] }
+    struct AudioFolder: Equatable { let id: UUID; let deleted: Bool; let status: MeetingStatus; let offscreen: Bool }
+    func listAudio() -> [URL] {
         guard !meeting.audioDeleted else { return [] }
         return ((try? FileManager.default.contentsOfDirectory(at: state.library.folder(meeting.id), includingPropertiesForKeys: nil)) ?? [])
             .filter { ["wav", "caf", "m4a", "mp3", "flac", "aiff", "ogg"].contains($0.pathExtension.lowercased()) }.sorted { $0.lastPathComponent < $1.lastPathComponent }
@@ -310,15 +312,14 @@ private struct PlayerBar: View {
     @State private var scrub: Double?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var body: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 8) {
             Button { playback.togglePause() } label: {
                 Image(systemName: playback.playing ? "pause.fill" : "play.fill")
                     .font(.system(size: 11, weight: .bold))
                     .foregroundStyle(Theme.orange)
-                    .frame(width: 16)
                     .contentTransition(reduceMotion ? .identity : .symbolEffect(.replace))
             }
-            .buttonStyle(ControlStyle(kind: .quiet, compact: true))
+            .buttonStyle(ControlStyle(kind: .quiet, compact: true, square: true))
             .accessibilityLabel(playback.playing ? "Pause playback" : "Resume playback")
             MonoLabel(playback.sources.map { $0 == "microphone" ? "You" : $0 == "system" ? "Colleagues" : "Recording" }.joined(separator: " + "))
                 .lineLimit(1)
@@ -333,14 +334,13 @@ private struct PlayerBar: View {
             Button { playback.cycleRate() } label: { Text("\(playback.rate.formatted(.number.precision(.fractionLength(0...2))))×").monospacedDigit() }
                 .buttonStyle(ControlStyle(kind: .quiet, compact: true)).help("Playback speed").accessibilityLabel("Playback speed")
             Button { playback.stop() } label: { Image(systemName: "xmark").font(.system(size: 10, weight: .bold)) }
-                .buttonStyle(ControlStyle(kind: .quiet, compact: true)).help("Close the player").accessibilityLabel("Stop playback")
+                .buttonStyle(ControlStyle(kind: .quiet, compact: true, square: true)).help("Close the player").accessibilityLabel("Stop playback")
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 8)
-        .glassSurface(cornerRadius: Theme.radius, interactive: true)
-        .padding(.horizontal, 20)
-        .padding(.vertical, 10)
-        .background(Theme.paper)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .glassSurface(cornerRadius: Theme.radius)
+        .padding(.horizontal, 24)
+        .padding(.vertical, 12)
     }
 }
 
@@ -352,9 +352,9 @@ struct AnalysisView: View {
     var failure: String? { state.analysisFailure?.id == meeting.id ? state.analysisFailure?.message : nil }
     var body: some View {
         if analyzing {
-            VStack(spacing: 14) {
+            VStack(spacing: 12) {
                 DotProgress(value: nil, dots: 20).frame(width: 140, height: 6)
-                Text("Analyzing the conversation…").font(.system(size: 15, weight: .medium))
+                Text("Analyzing the conversation…").font(.system(size: 14, weight: .medium))
                 MonoLabel("\(state.preferences.template.name) · \(state.preferences.openRouterModel)")
                 Button("Cancel") { state.cancelAnalysis() }.buttonStyle(ControlStyle(kind: .quiet, compact: true))
             }
@@ -374,10 +374,10 @@ struct AnalysisView: View {
                 .padding(.top, 4)
                 MonoLabel("Sends the transcript and your notes as text to OpenRouter · never audio")
             }
-            .padding(28).frame(maxWidth: .infinity, maxHeight: .infinity)
+            .padding(24).frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
+                VStack(alignment: .leading, spacing: 16) {
                     HStack(spacing: 8) {
                         MonoLabel([meeting.analysisTemplate, meeting.analysisModel.map { $0.components(separatedBy: "/").last ?? $0 }, meeting.analyzedAt?.formatted(.dateTime.day().month(.abbreviated).hour().minute())].compactMap { $0 }.joined(separator: " · "))
                         Spacer()
@@ -393,9 +393,9 @@ struct AnalysisView: View {
                     if meeting.notesStale == true {
                         Label("The transcript changed since this analysis. Re-analyze to update.", systemImage: "clock.arrow.circlepath").font(.system(size: 12)).foregroundStyle(Theme.secondary)
                     }
-                    MarkdownNotes(text: meeting.summary).frame(maxWidth: Theme.readingWidth, alignment: .leading)
+                    MarkdownNotes(text: meeting.summary).equatable().frame(maxWidth: Theme.readingWidth, alignment: .leading)
                 }
-                .padding(.horizontal, 32).padding(.vertical, 22).frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 24).padding(.vertical, 24).frame(maxWidth: .infinity, alignment: .leading)
             }
         }
     }
@@ -406,15 +406,8 @@ struct AnalysisView: View {
             .help(meeting.segments.isEmpty ? "Transcribe the meeting first" : "Analyze with \(state.preferences.openRouterModel)")
     }
     func failureView(_ message: String) -> some View {
-        HStack(alignment: .top, spacing: 8) {
-            Image(systemName: "exclamationmark.circle.fill").foregroundStyle(Theme.orange)
-            Text(message).font(.system(size: 12)).fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
-            if message.contains("Settings") {
-                Button("Open Settings") { state.showSettings(.analysis) }.buttonStyle(ControlStyle(compact: true))
-            }
-        }
-        .padding(12).frame(maxWidth: 460, alignment: .leading)
-        .background(Theme.orange.opacity(0.07), in: RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous))
+        InlineHint(symbol: "exclamationmark.circle.fill", text: message, action: message.contains("Settings") ? ("Open Settings", { state.showSettings(.analysis) }) : nil)
+            .frame(maxWidth: 460, alignment: .leading)
     }
 }
 

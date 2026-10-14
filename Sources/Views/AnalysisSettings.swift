@@ -27,7 +27,7 @@ struct AnalysisSettings: View {
                         .buttonStyle(ControlStyle(kind: .quiet, compact: true))
                     Spacer()
                 }
-                .padding(.horizontal, 8).frame(height: 40)
+                .padding(.horizontal, 4).frame(minHeight: 40)
             }
         }
         .sheet(isPresented: $choosingModel) { ModelCatalog(selection: $state.preferences.openRouterModel) }
@@ -51,11 +51,13 @@ struct AnalysisSettings: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .focusEffectDisabled()
             .accessibilityLabel("Use \(template.name)")
             .accessibilityAddTraits(selected ? .isSelected : [])
             Button("Edit") { editing = template }.buttonStyle(ControlStyle(kind: .quiet, compact: true))
         }
-        .padding(.horizontal, 14).padding(.vertical, 9)
+        .padding(.horizontal, 12).padding(.vertical, 8)
+        .frame(minHeight: 40)
     }
 }
 
@@ -72,24 +74,22 @@ struct OpenRouterKeyField: View {
             HStack(spacing: 8) {
                 Image(systemName: "key").font(.system(size: 11)).foregroundStyle(Theme.secondary)
                 SecureField("", text: $key, prompt: Text("sk-or-v1-…"))
-                    .textFieldStyle(.plain).font(.system(size: 13, design: .monospaced))
+                    .textFieldStyle(.plain).font(.system(size: 13, design: .monospaced)).focusEffectDisabled()
                     .onChange(of: key) { _, value in if value != saved && status != .checking { status = .idle } }
                     .onSubmit(validate)
                 Button(status == .checking ? "Checking" : "Validate & Save", action: validate)
                     .buttonStyle(ControlStyle(kind: .primary, compact: true))
                     .disabled(key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || status == .checking)
             }
-            .padding(.horizontal, 14).frame(height: 46)
+            .padding(.horizontal, 12).frame(minHeight: 44)
             RowDivider()
             HStack(spacing: 8) {
                 keyStatus
                 Spacer()
-                Link(destination: URL(string: "https://openrouter.ai/settings/keys")!) {
-                    HStack(spacing: 4) { Text("Get a key"); Image(systemName: "arrow.up.right").font(.system(size: 8.5, weight: .bold)) }
-                }
+                Link(destination: URL(string: "https://openrouter.ai/settings/keys")!) { LinkLabel("Get a key") }
                 .buttonStyle(ControlStyle(kind: .quiet, compact: true))
             }
-            .padding(.horizontal, 14).frame(height: 40)
+            .padding(.leading, 12).padding(.trailing, 8).frame(minHeight: 40)
         }
         .onAppear {
             saved = state.readKey()
@@ -106,7 +106,7 @@ struct OpenRouterKeyField: View {
                 Label(detail, systemImage: "checkmark.circle.fill").font(.system(size: 11.5)).foregroundStyle(Theme.you).lineLimit(1)
                 Button("Remove", role: .destructive) { remove() }.buttonStyle(ControlStyle(kind: .quiet, compact: true))
             }
-        case .invalid(let message): Label(message, systemImage: "xmark.circle.fill").font(.system(size: 11.5)).foregroundStyle(Theme.orange).lineLimit(2)
+        case .invalid(let message): Label(message, systemImage: "xmark.circle.fill").font(.system(size: 11.5)).foregroundStyle(Theme.destructive).lineLimit(2)
         }
     }
     func validate() {
@@ -142,25 +142,17 @@ struct ModelCatalog: View {
         return models.filter { model in words.allSatisfy { model.name.lowercased().contains($0) || model.id.lowercased().contains($0) } }
     }
     var body: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 9) {
-                Image(systemName: "square.stack.3d.up")
-                    .font(.system(size: 15, weight: .medium))
-                    .symbolRenderingMode(.hierarchical)
-                    .foregroundStyle(Theme.orange)
-                Text("Choose a model").font(.system(size: 17, weight: .semibold))
+        let results = filtered
+        return VStack(spacing: 0) {
+            HStack(spacing: 8) {
+                Image(systemName: "square.stack.3d.up").font(.system(size: 15, weight: .medium)).foregroundStyle(Theme.orange)
+                Text("Choose a model").font(.system(size: 18, weight: .semibold))
                 Spacer()
-                MonoLabel(loading ? "Loading" : "\(filtered.count) models")
+                MonoLabel(loading ? "Loading" : "\(results.count) models")
             }
-            .padding(.horizontal, 20).padding(.top, 18).padding(.bottom, 12)
-            HStack(spacing: 7) {
-                Image(systemName: "magnifyingglass").foregroundStyle(Theme.secondary)
-                TextField("Search, e.g. claude, gemini flash, gpt", text: $query).textFieldStyle(.plain)
-            }
-            .padding(.horizontal, 11).frame(height: Theme.controlHeight)
-            .background(Theme.paper, in: RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous).strokeBorder(Theme.line))
-            .padding(.horizontal, 20).padding(.bottom, 12)
+            .padding(.horizontal, 20).padding(.top, 20).padding(.bottom, 12)
+            SearchField(prompt: "Search, e.g. claude, gemini flash, gpt", text: $query)
+                .padding(.horizontal, 20).padding(.bottom, 12)
             Divider()
             Group {
                 if loading {
@@ -175,7 +167,7 @@ struct ModelCatalog: View {
                         Button("Try Again") { Task { await load() } }.buttonStyle(ControlStyle(compact: true))
                     }.padding().frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
-                    List(filtered) { model in
+                    List(results) { model in
                         Button { selection = model.id; dismiss() } label: {
                             HStack(alignment: .top, spacing: 10) {
                                 Image(systemName: model.id == selection ? "checkmark.circle.fill" : "circle").foregroundStyle(model.id == selection ? Theme.orange : Theme.secondary.opacity(0.5)).padding(.top, 1)
@@ -190,7 +182,9 @@ struct ModelCatalog: View {
                                 }
                             }
                             .padding(.vertical, 4).contentShape(Rectangle())
-                        }.buttonStyle(.plain)
+                        }
+                        .buttonStyle(.plain)
+                        .focusEffectDisabled()
                     }
                     .listStyle(.inset)
                     .scrollContentBackground(.hidden)
@@ -203,10 +197,11 @@ struct ModelCatalog: View {
                 Spacer()
                 Button("Done") { dismiss() }.buttonStyle(ControlStyle(compact: true)).keyboardShortcut(.cancelAction)
             }
-            .padding(.horizontal, 20).padding(.vertical, 14)
+            .padding(.horizontal, 20).padding(.vertical, 12)
         }
         .frame(width: 560, height: 520)
         .background(Theme.background.ignoresSafeArea())
+        .tint(Theme.orange)
         .task { await load() }
     }
     func load() async {
@@ -219,31 +214,30 @@ struct ModelCatalog: View {
 
 struct TemplateEditor: View {
     @ObservedObject var state: AppState
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State var template: AnalysisTemplate
     @Environment(\.dismiss) private var dismiss
+    private enum Field { case name, prompt }
+    @FocusState private var focus: Field?
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            HStack(spacing: 9) {
-                Image(systemName: "text.badge.star")
-                    .font(.system(size: 15, weight: .medium))
-                    .symbolRenderingMode(.hierarchical)
-                    .foregroundStyle(Theme.orange)
-                Text("Analysis template").font(.system(size: 17, weight: .semibold))
+            HStack(spacing: 8) {
+                Image(systemName: "text.badge.star").font(.system(size: 15, weight: .medium)).foregroundStyle(Theme.orange)
+                Text("Analysis template").font(.system(size: 18, weight: .semibold))
             }
             TextField("Name", text: $template.name)
-                .textFieldStyle(.plain)
-                .font(.system(size: 13))
-                .padding(.horizontal, 11)
-                .frame(height: Theme.controlHeight)
-                .background(Theme.paper, in: RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous).strokeBorder(Theme.line))
-            VStack(alignment: .leading, spacing: 6) {
+                .textFieldStyle(.plain).font(.system(size: 13)).focusEffectDisabled()
+                .focused($focus, equals: .name)
+                .padding(.horizontal, 10).frame(height: Theme.controlHeight)
+                .field(focused: focus == .name)
+            VStack(alignment: .leading, spacing: 8) {
                 MonoLabel("Instructions")
                 TextEditor(text: $template.prompt)
-                    .font(.system(size: 13)).scrollContentBackground(.hidden).padding(8)
-                    .background(Theme.paper, in: RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous).strokeBorder(Theme.line))
-                    .frame(height: 170)
+                    .font(.system(size: 13)).scrollContentBackground(.hidden).focusEffectDisabled()
+                    .focused($focus, equals: .prompt)
+                    .padding(8)
+                    .field(focused: focus == .prompt)
+                    .frame(height: 168)
                 caption("What should the notes focus on? For example: “Focus on budget, objections and next steps with the client.”")
             }
             HStack {
@@ -270,6 +264,8 @@ struct TemplateEditor: View {
             }
         }
         .padding(20).frame(width: 480).background(Theme.background.ignoresSafeArea())
+        .tint(Theme.orange)
+        .animation(reduceMotion ? nil : Theme.feedback, value: focus)
     }
 }
 

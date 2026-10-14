@@ -19,13 +19,8 @@ struct RecorderControls: View {
                         IconButton(symbol: state.recorder.paused ? "play.fill" : "pause.fill", label: state.recorder.paused ? "Resume recording" : "Pause recording") { state.togglePause() }
                             .disabled(state.stopping)
                         Button { state.stopRecording() } label: {
-                            HStack(spacing: 8) {
-                                if state.stopping {
-                                    DotProgress(value: nil, dots: 4, color: .white).frame(width: 22, height: 5)
-                                } else {
-                                    RoundedRectangle(cornerRadius: 1.5).fill(.white).frame(width: 8, height: 8)
-                                }
-                                Text(state.stopping ? "Saving" : "Stop")
+                            RecordLabel(title: state.stopping ? "Saving" : "Stop", busy: state.stopping) {
+                                RoundedRectangle(cornerRadius: 1.5).fill(.white).frame(width: 8, height: 8)
                             }
                         }
                         .buttonStyle(ControlStyle(kind: .primary))
@@ -34,13 +29,8 @@ struct RecorderControls: View {
                         .transition(.opacity)
                     } else {
                         Button { state.startRecording() } label: {
-                            HStack(spacing: 8) {
-                                if state.starting {
-                                    DotProgress(value: nil, dots: 4, color: .white).frame(width: 22, height: 5)
-                                } else {
-                                    Circle().fill(.white).frame(width: 7, height: 7)
-                                }
-                                Text(state.starting ? "Starting" : "Start recording")
+                            RecordLabel(title: state.starting ? "Starting" : "Start recording", busy: state.starting) {
+                                Circle().fill(.white).frame(width: 7, height: 7)
                             }
                         }
                         .buttonStyle(ControlStyle(kind: .primary))
@@ -56,10 +46,24 @@ struct RecorderControls: View {
     }
 }
 
+/// Record button content: a glyph, replaced by dot progress while the action runs.
+struct RecordLabel<Glyph: View>: View {
+    let title: String
+    let busy: Bool
+    @ViewBuilder let glyph: Glyph
+    var body: some View {
+        HStack(spacing: 8) {
+            if busy { DotProgress(value: nil, dots: 4, color: .white).frame(width: 22, height: 5) } else { glyph }
+            Text(title)
+        }
+    }
+}
+
 /// Compact meeting row with live state, for the menu-bar panel and the library sidebar.
 struct MeetingRow: View {
     @ObservedObject var state: AppState
     let meeting: Meeting
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var body: some View {
         // The title gets the full width and two lines, since AI titles carry the meeting's topic; the duration
         // sits at the end of the metadata line, so durations still read as one column down the list.
@@ -68,7 +72,7 @@ struct MeetingRow: View {
                 .lineLimit(2).truncationMode(.tail).fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentTransition(.opacity)
-                .animation(.easeInOut(duration: 0.35), value: meeting.title)
+                .animation(reduceMotion ? nil : .easeInOut(duration: 0.35), value: meeting.title)
                 .help(meeting.title)
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 status
@@ -78,10 +82,10 @@ struct MeetingRow: View {
             }
         }
         .contentShape(Rectangle())
-        .padding(.horizontal, 4).padding(.vertical, 3)
+        .padding(.horizontal, 4).padding(.vertical, 4)
         .background(Theme.orange.opacity(state.renamedID == meeting.id ? 0.09 : 0), in: RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous))
-        .padding(.horizontal, -4).padding(.vertical, -3)
-        .animation(.easeInOut(duration: 0.4), value: state.renamedID)
+        .padding(.horizontal, -4).padding(.vertical, -4)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.4), value: state.renamedID)
     }
     @ViewBuilder var status: some View {
             if meeting.id == state.processingID {
@@ -156,20 +160,20 @@ struct SourcePill: View {
         Button {
             if reduceMotion { isOn.toggle() } else { withAnimation(Theme.feedback) { isOn.toggle() } }
         } label: {
-            HStack(spacing: 6) {
+            HStack(spacing: 8) {
                 Image(systemName: symbol).font(.system(size: 9, weight: .bold))
                     .foregroundStyle(isOn ? .white : Theme.secondary)
-                    .frame(width: 20, height: 20)
+                    .frame(width: 18, height: 18)
                     .background(isOn ? color : Theme.line, in: Circle())
                 Text(title).font(.system(size: 12, weight: .semibold)).foregroundStyle(isOn ? Color.primary : Theme.secondary)
                     .lineLimit(1).fixedSize(horizontal: true, vertical: false)
                 Spacer(minLength: 0)
                 SwitchKnob(isOn: isOn, color: color)
             }
-            .padding(.horizontal, 7)
+            .padding(.leading, 6).padding(.trailing, 8)
             .frame(maxWidth: .infinity, minHeight: Theme.controlHeight)
-            .background(isOn ? color.opacity(0.07) : hovering ? Theme.line.opacity(0.32) : .clear, in: RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous).strokeBorder(isOn ? color.opacity(hovering ? 0.5 : 0.26) : Theme.line))
+            .background(isOn ? color.opacity(0.08) : hovering ? Theme.line.opacity(0.5) : .clear, in: RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous).strokeBorder(isOn ? color.opacity(hovering ? 0.5 : 0.28) : Theme.line))
             .contentShape(Rectangle())
         }
         .buttonStyle(PressStyle())

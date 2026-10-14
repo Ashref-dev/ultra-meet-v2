@@ -13,13 +13,12 @@ struct SettingsView: View {
                 .sidebarSurface()
             Divider().ignoresSafeArea()
             ScrollView {
-                VStack(alignment: .leading, spacing: 24) {
-                    HStack(spacing: 9) {
+                VStack(alignment: .leading, spacing: 20) {
+                    HStack(spacing: 8) {
                         Image(systemName: state.settingsPane.symbol)
                             .font(.system(size: 16, weight: .medium))
-                            .symbolRenderingMode(.hierarchical)
                             .foregroundStyle(Theme.orange)
-                            .frame(width: 22)
+                            .frame(width: 24)
                         Text(state.settingsPane.title)
                             .font(.system(size: 20, weight: .semibold))
                     }
@@ -35,15 +34,13 @@ struct SettingsView: View {
                     }
                 }
                 .id(state.settingsPane)
-                .transition(reduceMotion ? .identity : .opacity.animation(.easeOut(duration: 0.14)))
+                .transition(reduceMotion ? .identity : .opacity.animation(Theme.feedback))
                 .frame(maxWidth: 540)
-                .padding(.horizontal, 32)
-                .padding(.vertical, 30)
+                .padding(24)
                 .frame(maxWidth: .infinity, alignment: .top)
             }
             .background(Theme.background.ignoresSafeArea())
         }
-        .tint(Theme.orange)
         .frame(minWidth: 720, minHeight: 520)
         .onChange(of: state.preferences) { _, _ in state.savePreferences() }
     }
@@ -51,25 +48,26 @@ struct SettingsView: View {
         VStack(alignment: .leading, spacing: 2) {
             HStack(spacing: 8) {
                 LogoMark(size: 13)
-                Text("Settings").font(.system(size: 14, weight: .semibold))
+                Text("Settings").font(.system(size: 13, weight: .semibold))
             }
-            .padding(.horizontal, 10).padding(.top, 8).padding(.bottom, 14)
+            .padding(.horizontal, 8).padding(.top, 8).padding(.bottom, 12)
             ForEach(SettingsPane.allCases) { pane in
                 Button { withAnimation(reduceMotion ? nil : Theme.selection) { state.settingsPane = pane } } label: {
-                    HStack(spacing: 9) {
+                    HStack(spacing: 8) {
                         Image(systemName: pane.symbol).font(.system(size: 12, weight: .medium))
                             .foregroundStyle(state.settingsPane == pane ? Theme.orange : Theme.secondary).frame(width: 18)
                         Text(pane.title).font(.system(size: 13, weight: state.settingsPane == pane ? .semibold : .regular))
                         Spacer()
                     }
-                    .padding(.horizontal, 10).frame(height: 34).contentShape(Rectangle())
+                    .padding(.horizontal, 8).frame(height: Theme.controlHeight)
                 }
                 .buttonStyle(RowStyle(selected: state.settingsPane == pane))
+                .focusEffectDisabled()
                 .accessibilityAddTraits(state.settingsPane == pane ? .isSelected : [])
             }
             Spacer()
         }
-        .padding(.horizontal, 10).padding(.vertical, 4)
+        .padding(.horizontal, 12).padding(.vertical, 4)
     }
 }
 
@@ -82,13 +80,13 @@ struct SettingsSection<Content: View>: View {
     @ViewBuilder let content: Content
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            MonoLabel(title).padding(.leading, 2)
+            MonoLabel(title).padding(.leading, 4)
             VStack(spacing: 0) { content }.card()
             if let footer {
-                Text(footer).font(.system(size: 11.5)).foregroundStyle(Theme.secondary).fixedSize(horizontal: false, vertical: true).padding(.horizontal, 2)
+                Text(footer).font(.system(size: 11.5)).foregroundStyle(Theme.secondary).fixedSize(horizontal: false, vertical: true).padding(.horizontal, 4)
             }
         }
-        .padding(.bottom, 22)
+        .padding(.bottom, 24)
     }
 }
 
@@ -106,8 +104,8 @@ struct SettingsRow<Accessory: View>: View {
             Spacer(minLength: 8)
             accessory
         }
-        .padding(.horizontal, 14).padding(.vertical, 10)
-        .frame(minHeight: 44)
+        .padding(.horizontal, 12).padding(.vertical, 8)
+        .frame(minHeight: 40)
     }
 }
 
@@ -121,6 +119,7 @@ struct SettingsToggle: View {
             SettingsRow(title: title, detail: detail) { SwitchKnob(isOn: isOn) }.contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .focusEffectDisabled()
         .accessibilityLabel(title)
         .accessibilityValue(isOn ? "On" : "Off")
         .accessibilityAddTraits(.isToggle)
@@ -128,7 +127,7 @@ struct SettingsToggle: View {
 }
 
 struct RowDivider: View {
-    var body: some View { Divider().padding(.leading, 14) }
+    var body: some View { Divider().padding(.leading, 12) }
 }
 
 private func openURL(_ string: String) { if let url = URL(string: string) { NSWorkspace.shared.open(url) } }
@@ -166,12 +165,7 @@ struct GeneralSettings: View {
                 RowDivider()
                 ForEach(Array(Self.shortcuts.enumerated()), id: \.offset) { index, shortcut in
                     if index > 0 { RowDivider() }
-                    HStack {
-                        Text(shortcut.0).font(.system(size: 13))
-                        Spacer()
-                        KeyCaps(keys: shortcut.1)
-                    }
-                    .padding(.horizontal, 14).frame(height: 36)
+                    SettingsRow(title: shortcut.0) { KeyCaps(keys: shortcut.1) }
                 }
             }
             SettingsSection(title: "Setup") {
@@ -203,7 +197,7 @@ struct RecordingSettings: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             SettingsSection(title: "Record by default", footer: "Separate tracks let transcripts and AI notes tell who said what. Headphones keep colleagues out of your microphone.") {
-                HStack { SourcePicker(state: state); Spacer() }.padding(12)
+                SourcePicker(state: state).padding(12)
             }
             SettingsSection(title: "Microphone", footer: "Voice Isolation removes background voices and noise. macOS lets you switch it while a recording is running.") {
                 SettingsRow(title: "Input", detail: AVCaptureDevice.default(for: .audio)?.localizedName ?? "No input device") {
@@ -250,7 +244,7 @@ struct TranscriptionSettings: View {
             }
             SettingsSection(title: "Names and terms", footer: "Comma-separated names, products and jargon. Words only: sentences here can confuse recognition. Correcting a line in a transcript offers to add new names here.") {
                 TextField("", text: $state.preferences.vocabulary, prompt: Text("Achraf, Kubernetes, Q3 roadmap"), axis: .vertical)
-                    .textFieldStyle(.plain).font(.system(size: 13)).lineLimit(1...4).padding(14)
+                    .textFieldStyle(.plain).font(.system(size: 13)).lineLimit(1...4).focusEffectDisabled().padding(12)
             }
         }
     }
@@ -371,7 +365,7 @@ struct CreditsSettings: View {
     var updater: Updater { state.updater }
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            VStack(spacing: 10) {
+            VStack(spacing: 8) {
                 Image(nsImage: Self.icon).resizable().frame(width: 96, height: 96)
                     .scaleEffect(reduceMotion || !hovering ? 1 : 1.04).animation(reduceMotion ? nil : .snappy(duration: 0.25), value: hovering)
                     .onHover { hovering = $0 }
@@ -381,13 +375,13 @@ struct CreditsSettings: View {
                 Text("Private meeting transcripts from your menu bar.").font(.system(size: 12.5)).foregroundStyle(Theme.secondary)
             }
             .frame(maxWidth: .infinity)
-            .padding(.top, 8).padding(.bottom, 26)
+            .padding(.top, 8).padding(.bottom, 24)
             SettingsSection(title: "Updates", footer: "Checks read the public release list on GitHub. Nothing about you or your meetings is sent. Installing moves this copy to the Trash and relaunches.") {
                 updateRow
                 if case .available(let release) = updater.state, let notes = release.notes?.trimmingCharacters(in: .whitespacesAndNewlines), !notes.isEmpty {
                     RowDivider()
                     Text(notes).font(.system(size: 11.5)).foregroundStyle(Theme.secondary).lineLimit(10).textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .leading).padding(14)
+                        .frame(maxWidth: .infinity, alignment: .leading).padding(12)
                 }
                 RowDivider()
                 SettingsToggle(title: "Check automatically", detail: "Once a day; tells you when a new version is out.", isOn: $state.preferences.checkForUpdates)
@@ -395,21 +389,21 @@ struct CreditsSettings: View {
             .animation(reduceMotion ? nil : Theme.feedback, value: updater.state)
             SettingsSection(title: "Links") {
                 SettingsRow(title: "Website", detail: "ultra.achraf.tn") {
-                    Link(destination: Self.website) { linkLabel("Open") }.buttonStyle(ControlStyle(compact: true))
+                    Link(destination: Self.website) { LinkLabel("Open") }.buttonStyle(ControlStyle(compact: true))
                 }
                 RowDivider()
                 SettingsRow(title: "Made by", detail: "achraf.tn") {
-                    Link(destination: Self.author) { linkLabel("Open") }.buttonStyle(ControlStyle(compact: true))
+                    Link(destination: Self.author) { LinkLabel("Open") }.buttonStyle(ControlStyle(compact: true))
                 }
                 RowDivider()
                 SettingsRow(title: "All releases", detail: "github.com/Ashref-dev/ultra-meet-v2") {
-                    Link(destination: Updater.releasesPage) { linkLabel("Open") }.buttonStyle(ControlStyle(compact: true))
+                    Link(destination: Updater.releasesPage) { LinkLabel("Open") }.buttonStyle(ControlStyle(compact: true))
                 }
             }
             SettingsSection(title: "Built with", footer: "Speech recognition runs locally with Qwen3-ASR on MLX through mlx-audio. AI analysis uses OpenRouter, only when you ask.") {
                 HStack(spacing: 6) {
                     ForEach(["Qwen3-ASR", "MLX", "mlx-audio", "OpenRouter", "SwiftUI"], id: \.self) { name in
-                        Text(name).font(.system(size: 11.5, weight: .medium)).padding(.horizontal, 8).frame(height: 22)
+                        Text(name).font(.system(size: 11.5, weight: .medium)).padding(.horizontal, 8).frame(height: 20)
                             .background(Theme.background, in: RoundedRectangle(cornerRadius: Theme.chipRadius, style: .continuous))
                     }
                     Spacer(minLength: 0)
@@ -429,7 +423,7 @@ struct CreditsSettings: View {
         case .available(let release):
             SettingsRow(title: "Version \(release.version?.description ?? release.tag) is available", detail: busy ? "Finish recording and transcribing first." : "You have \(version).") {
                 HStack(spacing: 6) {
-                    Link(destination: release.page) { linkLabel("Notes") }.buttonStyle(ControlStyle(kind: .quiet, compact: true))
+                    Link(destination: release.page) { LinkLabel("Notes") }.buttonStyle(ControlStyle(kind: .quiet, compact: true))
                     Button(release.archive == nil ? "Download…" : "Install and Relaunch") { Task { await updater.install(release) { busy } } }
                         .buttonStyle(ControlStyle(kind: .primary, compact: true)).disabled(busy)
                 }
@@ -439,7 +433,7 @@ struct CreditsSettings: View {
         case .failed(let message):
             SettingsRow(title: "Update didn’t work", detail: message) {
                 HStack(spacing: 6) {
-                    Link(destination: Updater.releasesPage) { linkLabel("GitHub") }.buttonStyle(ControlStyle(kind: .quiet, compact: true))
+                    Link(destination: Updater.releasesPage) { LinkLabel("GitHub") }.buttonStyle(ControlStyle(kind: .quiet, compact: true))
                     checkButton("Try Again")
                 }
             }
@@ -449,8 +443,5 @@ struct CreditsSettings: View {
     var busy: Bool { state.activeID != nil || state.isWorking || state.starting || state.analyzingID != nil }
     func checkButton(_ title: String) -> some View {
         Button(title) { Task { await updater.check() } }.buttonStyle(ControlStyle(compact: true))
-    }
-    func linkLabel(_ title: String) -> some View {
-        HStack(spacing: 4) { Text(title); Image(systemName: "arrow.up.right").font(.system(size: 8.5, weight: .bold)) }
     }
 }

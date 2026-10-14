@@ -12,6 +12,7 @@ struct NoteEditor: View {
     var framed = true
     @State private var focused = false
     @State private var hovering = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var body: some View {
         NoteTextView(text: $text, focused: $focused, fontSize: fontSize, inset: inset)
             .mask(
@@ -34,8 +35,8 @@ struct NoteEditor: View {
                         .strokeBorder(focused ? Theme.orange.opacity(0.55) : hovering ? Theme.line : .clear, lineWidth: focused ? 1.5 : 1)
                 }
             }
-            .animation(Theme.feedback, value: focused)
-            .animation(Theme.feedback, value: hovering)
+            .animation(reduceMotion ? nil : Theme.feedback, value: focused)
+            .animation(reduceMotion ? nil : Theme.feedback, value: hovering)
             .onHover { hovering = $0 }
             .accessibilityLabel(placeholder)
     }

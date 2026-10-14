@@ -16,7 +16,7 @@ struct AppCommands: Commands {
             Button("Meeting Library") { delegate.showLibrary() }.keyboardShortcut("l")
         }
         CommandGroup(before: .toolbar) {
-            Button(sidebarCollapsed ? "Show Sidebar" : "Hide Sidebar") { withAnimation(Theme.selection) { sidebarCollapsed.toggle() } }
+            Button(sidebarCollapsed ? "Show Sidebar" : "Hide Sidebar") { sidebarCollapsed.toggle() }
                 .keyboardShortcut("s", modifiers: [.command, .control])
         }
         CommandMenu("Recording") {

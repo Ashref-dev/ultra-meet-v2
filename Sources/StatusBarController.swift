@@ -4,10 +4,11 @@ import SwiftUI
 
 /// Native status item: left-click opens the recorder panel, right-click (or Control-click) opens quick actions.
 @MainActor
-final class StatusBarController: NSObject {
+final class StatusBarController: NSObject, NSPopoverDelegate {
     private let state: AppState
     private let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     private let popover = NSPopover()
+    private let visibility = Visibility()
     private var subscriptions = Set<AnyCancellable>()
     private var appearance = ""
     private var ripple: Timer?
@@ -25,9 +26,11 @@ final class StatusBarController: NSObject {
             button.imagePosition = .imageOnly
             button.setAccessibilityLabel("Ultra Transcribe")
         }
-        let host = NSHostingController(rootView: MenuBarPanel(state: state))
+        // Built once and reused: opening the panel only shows it, it never rebuilds the view tree.
+        let host = NSHostingController(rootView: SurfaceRoot(visibility: visibility, content: MenuBarPanel(state: state)))
         host.sizingOptions = [.preferredContentSize]
         popover.contentViewController = host
+        popover.delegate = self
         popover.behavior = .transient
         popover.animates = true
         state.objectWillChange
@@ -47,12 +50,14 @@ final class StatusBarController: NSObject {
 
     func showPanel() {
         guard let button = item.button, !popover.isShown else { return }
+        visibility.shown = true
         NSApp.activate()
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
         popover.contentViewController?.view.window?.makeKey()
         popover.contentViewController?.view.window?.makeFirstResponder(nil)
     }
     func closePanel() { if popover.isShown { popover.performClose(nil) } }
+    func popoverDidClose(_ notification: Notification) { visibility.shown = false }
 
     @objc private func clicked() {
         let event = NSApp.currentEvent
