@@ -2,6 +2,10 @@
 
 All notable changes are listed here. Versions follow [Semantic Versioning](https://semver.org): `0.x` releases may still change behavior between minor versions.
 
+## Unreleased
+
+- The menu-bar panel and the library and Settings sidebars show clear Liquid Glass again; 0.7.0 covered them with a warm tint.
+
 ## 0.7.0 · 2026-10-15
 
 - A library of local speech models in Settings → Transcription: Whisper Large v3 Turbo, Cohere Transcribe and Cohere Transcribe Arabic, Parakeet TDT v3, Granite Speech 4.0 and Voxtral Mini Realtime join Qwen3-ASR. Download or delete each one; size, memory and speed are shown for every model.

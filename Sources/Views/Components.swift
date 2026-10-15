@@ -329,7 +329,7 @@ private struct GlassSurface: ViewModifier {
     }
 }
 
-/// Native translucent chrome with a light warm wash, so sidebars and the panel sit in the paper palette.
+/// Native translucent chrome: the system material untouched, so macOS 26 and later render true Liquid Glass.
 private struct ChromeSurface: View {
     let material: NSVisualEffectView.Material
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
@@ -338,7 +338,7 @@ private struct ChromeSurface: View {
         if reduceTransparency || contrast == .increased {
             Theme.background
         } else {
-            NativeMaterial(material: material).overlay(Theme.background.opacity(0.4))
+            NativeMaterial(material: material)
         }
     }
 }

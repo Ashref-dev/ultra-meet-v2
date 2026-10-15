@@ -117,8 +117,6 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, UNUserNotifica
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
         window.isReleasedWhenClosed = false
-        // Painted before SwiftUI's first frame, so opening never flashes the system gray.
-        window.backgroundColor = Theme.backgroundColor
         if autosave != "Setup" {
             let toolbar = NSToolbar(identifier: autosave)
             toolbar.delegate = self

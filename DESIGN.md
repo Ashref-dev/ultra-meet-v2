@@ -19,7 +19,7 @@ Warm Instrument. Operate mode. A compact recording instrument in the menu bar an
 
 - `ControlStyle` (primary orange glass, secondary clear glass, quiet borderless; `compact`, `expand`, `square`; hover, press 0.97, disabled 45%, destructive role in red). `IconButton` and `MoreMenu` (the ellipsis menu) build on it. `RecordLabel` swaps the record glyph for dot progress.
 - `GlassControls` groups neighboring glass controls into one `GlassEffectContainer`. `glassSurface()` uses Liquid Glass on macOS 26 and later; macOS 15 uses a material or solid tint; Reduce Transparency or Increase Contrast uses opaque paper with a stronger border.
-- `sidebarSurface()` and `popoverSurface()` use native `NSVisualEffectView` materials with a light warm wash, and opaque background under the accessibility settings above.
+- `sidebarSurface()` and `popoverSurface()` use native `NSVisualEffectView` materials untouched, so macOS 26 and later render clear Liquid Glass; never tint or overlay them. Opaque background under the accessibility settings above.
 - `card()` (paper, hairline, 12 pt), `field(focused:)` (paper, hairline, orange focus border), `SearchField`, `RowStyle` (hover and orange selection fill), `PressStyle`, `TabStrip` (sliding orange fill), `Segmented` (sliding paper thumb inset 2 pt), `ToggleChip`, `SwitchKnob`, `KeyCaps`, `LinkLabel`, `MonoLabel`, `EditableTitle`, `SpeakerAvatar`, `DotProgress`, `DotWaveform`, `Shake`, `FlowLayout`. `InlineHint` (TranscriptViews) is the one inline message for errors, warnings and suggestions. `SettingsSection`, `SettingsRow`, `SettingsToggle` and `RowDivider` live in SettingsView.
 - No system blue: every root gets `.tint(Theme.orange)` through `SurfaceRoot`, sheets set it again, fields draw their own orange focus border, and focus rings are disabled where they would appear on open.
 
@@ -27,7 +27,6 @@ Warm Instrument. Operate mode. A compact recording instrument in the menu bar an
 
 - The popover and every window are built once and reused. `SurfaceRoot` sets the `offscreen` environment value from a `Visibility` object (popover delegate, window occlusion). While offscreen, `DotWaveform` and the live card observe `LevelMeter.still` instead of the live meter, and `DotProgress` pauses its timeline.
 - No file reads in `body`: the model-installed check and the meeting's audio listing are cached and refreshed when their inputs change. `MarkdownNotes` is `Equatable`. Library search is filtered once per render.
-- Windows paint `Theme.backgroundColor` before the first SwiftUI frame.
 
 ## Surfaces
 
