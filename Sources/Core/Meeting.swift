@@ -61,6 +61,13 @@ enum ASRModel: String, Codable, CaseIterable, Identifiable {
         }
     }
     var name: String { spec.name }
+    /// The model itself, for a meeting's header: "Qwen3-ASR 1.7B, 8-bit" rather than "Balanced".
+    var fullName: String {
+        switch self {
+        case .best, .large, .small: return maker
+        default: return name
+        }
+    }
     var maker: String { spec.maker }
     var size: String { spec.size }
     var memoryGB: Double { spec.memoryGB }
@@ -210,6 +217,8 @@ struct Preferences: Codable, Equatable {
     /// Control-Option-Command-R starts or stops recording from any app.
     var globalShortcut = true
     var notifyWhenReady = true
+    /// Sends the transcript to OpenRouter as soon as a meeting is transcribed. Off unless the user turns it on.
+    var analyzeAfterTranscription = false
     var checkForUpdates = true
     /// Becomes true once the first-run setup is finished or skipped.
     var setupDone = false
@@ -245,6 +254,7 @@ struct Preferences: Codable, Equatable {
         liveTranscription = (try? values.decodeIfPresent(Bool.self, forKey: .liveTranscription)) ?? defaults.liveTranscription
         globalShortcut = (try? values.decodeIfPresent(Bool.self, forKey: .globalShortcut)) ?? defaults.globalShortcut
         notifyWhenReady = (try? values.decodeIfPresent(Bool.self, forKey: .notifyWhenReady)) ?? defaults.notifyWhenReady
+        analyzeAfterTranscription = (try? values.decodeIfPresent(Bool.self, forKey: .analyzeAfterTranscription)) ?? defaults.analyzeAfterTranscription
         checkForUpdates = (try? values.decodeIfPresent(Bool.self, forKey: .checkForUpdates)) ?? defaults.checkForUpdates
         setupDone = (try? values.decodeIfPresent(Bool.self, forKey: .setupDone)) ?? defaults.setupDone
     }

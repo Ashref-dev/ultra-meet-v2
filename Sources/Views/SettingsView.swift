@@ -10,8 +10,7 @@ struct SettingsView: View {
         HStack(spacing: 0) {
             sidebar
                 .frame(width: 208)
-                .sidebarSurface()
-            Divider().ignoresSafeArea()
+                .floatingSidebar(Theme.background)
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
                     HStack(spacing: 8) {
@@ -38,9 +37,10 @@ struct SettingsView: View {
                 .frame(maxWidth: 540)
                 .padding(24)
                 .frame(maxWidth: .infinity, alignment: .top)
+                .thinScrollbars()
             }
-            .background(Theme.background.ignoresSafeArea())
         }
+        .background(Theme.background.ignoresSafeArea())
         .frame(minWidth: 720, minHeight: 520)
         .onChange(of: state.preferences) { _, _ in state.savePreferences() }
     }
@@ -138,7 +138,8 @@ struct GeneralSettings: View {
     @ObservedObject var state: AppState
     static let shortcuts: [(String, [String])] = [
         ("Start or stop from any app", GlobalHotKey.keys), ("Start recording", ["⌘", "N"]), ("Pause or resume", ["⌘", "⇧", "P"]), ("Stop and transcribe", ["⌘", "⇧", "S"]),
-        ("Meeting library", ["⌘", "L"]), ("Toggle sidebar", ["⌃", "⌘", "S"]), ("Import audio", ["⌘", "O"]), ("Settings", ["⌘", ","])
+        ("Meeting library", ["⌘", "L"]), ("Search meetings", ["⌘", "F"]), ("Previous or next meeting", ["↑", "↓"]), ("Move meeting to Trash", ["⌫"]), ("Play or pause a meeting", ["Space"]), ("Transcript, AI notes, My notes", ["⌘", "1–3"]),
+        ("Copy the open tab", ["⌘", "⇧", "C"]), ("Export as Markdown", ["⌘", "⇧", "E"]), ("Toggle sidebar", ["⌃", "⌘", "S"]), ("Import audio", ["⌘", "O"]), ("Settings", ["⌘", ","])
     ]
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -467,7 +468,7 @@ struct CreditsSettings: View {
                     Link(destination: Updater.releasesPage) { LinkLabel("Open") }.buttonStyle(ControlStyle(compact: true))
                 }
             }
-            SettingsSection(title: "Built with", footer: "Speech recognition runs locally with Qwen3-ASR on MLX through mlx-audio. AI analysis uses OpenRouter, only when you ask.") {
+            SettingsSection(title: "Built with", footer: "Speech recognition runs locally on MLX through mlx-audio, with the speech model you choose. AI analysis uses OpenRouter, only when you ask.") {
                 HStack(spacing: 6) {
                     ForEach(["Qwen3-ASR", "MLX", "mlx-audio", "OpenRouter", "SwiftUI"], id: \.self) { name in
                         Text(name).font(.system(size: 11.5, weight: .medium)).padding(.horizontal, 8).frame(height: 20)

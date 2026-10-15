@@ -65,6 +65,7 @@ extension AppState {
                     ?? (segments.isEmpty ? "No speech was detected. Check your microphone and Mac audio permissions in Settings → Recording." : nil)
             }
             notifyReady(id)
+            if preferences.analyzeAfterTranscription && !segments.isEmpty { analyze(id) }
         } catch {
             // A live transcription that ends before Stop (or with a recording that won't be transcribed) leaves the
             // meeting alone; Stop then transcribes it as usual.

@@ -2,10 +2,18 @@
 
 All notable changes are listed here. Versions follow [Semantic Versioning](https://semver.org): `0.x` releases may still change behavior between minor versions.
 
-## Unreleased
+## 0.7.1 · 2026-10-15
 
 - The menu-bar panel is frosted Liquid Glass on macOS 26 and later: it blurs what is behind it, tinted lighter in light mode and darker in dark mode, with the system's vibrant text colors. It still opens under the icon and closes on Esc, a click elsewhere or a second click on the icon.
-- The library and Settings sidebars no longer have the warm tint from 0.7.0.
+- The library and Settings sidebars share the main area's color and float as a card, with no divider. Rows press in slightly when clicked.
+- Ultra-thin scrollbars everywhere: no gray track, a warm knob that widens under the pointer.
+- Copy is named for the open tab (Copy transcript, Copy AI notes, Copy my notes) and is disabled when there is nothing to copy. Copy and Export show their shortcuts, ⌘⇧C and ⌘⇧E.
+- New shortcuts: ⌘F searches meetings, ⌘1 to ⌘3 switch between Transcript, AI notes and My notes, and Esc clears the search. In the library, ↑ and ↓ move between meetings and ⌫ moves one to the Trash after confirming. Space plays or pauses a finished meeting's audio; it never starts or stops a recording.
+- Drop an audio file on the library window to import and transcribe it.
+- A meeting's header names the speech model that transcribed it.
+- Settings → AI Analysis → Analyze after transcription writes AI notes as soon as a meeting is transcribed. Off by default.
+- A meeting whose audio was deleted says so in one small line instead of a banner.
+- The app bundle no longer ships stray Python cache files.
 
 ## 0.7.0 · 2026-10-15
 

@@ -12,6 +12,7 @@ final class MenuBarWorkflowTests: XCTestCase {
         XCTAssertEqual(preferences.templates.map(\.name), AnalysisTemplate.defaults.map(\.name))
         XCTAssertEqual(preferences.template.name, "Meeting notes")
         XCTAssertEqual(preferences.languages, [])
+        XCTAssertFalse(preferences.analyzeAfterTranscription, "automatic analysis sends text to OpenRouter, so it stays off until chosen")
         let french = try JSONDecoder().decode(Preferences.self, from: Data(#"{"language":"French"}"#.utf8))
         XCTAssertEqual(french.languages, ["French"])
         var chosen = Preferences()
@@ -28,6 +29,8 @@ final class MenuBarWorkflowTests: XCTestCase {
         XCTAssertEqual(preferences.spokenLanguages, ["Arabic"], "one-language models use the first chosen language they support")
         preferences.model = .parakeet
         XCTAssertEqual(preferences.spokenLanguages, [], "models that detect the language get none")
+        XCTAssertEqual(ASRModel.large.fullName, "Qwen3-ASR 1.7B, 8-bit")
+        XCTAssertEqual(ASRModel.whisperTurbo.fullName, "Whisper Large v3 Turbo")
         preferences.model = .whisperTurbo
         preferences.languages = ["Filipino", "French"]
         XCTAssertEqual(preferences.spokenLanguages, ["French"])

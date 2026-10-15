@@ -182,6 +182,11 @@ final class AppState: ObservableObject {
         panel.allowsMultipleSelection = false
         NSApp.activate()
         guard panel.runModal() == .OK, let url = panel.url else { return }
+        importAudio(from: url)
+    }
+    /// Imports one audio file as a meeting and transcribes it; used by Import Audio and by dropping a file on the library.
+    func importAudio(from url: URL) {
+        guard canStart else { return }
         do {
             var meeting = Meeting(title: url.deletingPathExtension().lastPathComponent)
             meeting.model = preferences.model

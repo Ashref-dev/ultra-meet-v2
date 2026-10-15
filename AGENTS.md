@@ -16,7 +16,7 @@ These are part of every change, planned up front and reviewed like features:
 
 ## Non-negotiables
 
-- Audio never leaves the Mac. Nothing goes to the network unless the user explicitly asks (Analyze, key validation, model catalog, model download, update install), except the daily update check, which only reads the public GitHub release list and can be turned off.
+- Audio never leaves the Mac. Nothing goes to the network unless the user explicitly asks (Analyze, or turning on analysis after transcription, key validation, model catalog, model download, update install), except the daily update check, which only reads the public GitHub release list and can be turned off.
 - The app is menu-bar first: everything must be doable from the status item (left-click panel, right-click native menu). No Dock icon, no ⌘-Tab entry.
 - Permission prompts only follow a user action: microphone and Mac audio at the first recording or in setup, notifications when the person turns them on.
 - Never lose user data. Recordings, transcripts and notes are the user's. Move to Trash instead of deleting, decode old JSON tolerantly (`decodeIfPresent` with defaults), and migrate rather than reset (see `Keychain.read()` legacy migration).

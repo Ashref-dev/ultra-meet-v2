@@ -37,6 +37,13 @@ Updates: Settings → Credits checks for new releases and installs them in place
 | ⌘⇧P | Pause or resume |
 | ⌘⇧S | Stop and transcribe |
 | ⌘L | Meeting library |
+| ⌘F | Search meetings |
+| ↑ ↓ | Previous or next meeting in the library |
+| ⌫ | Move the selected meeting to the Trash, after confirming |
+| Space | Play or pause the open meeting's audio (never starts or stops a recording) |
+| ⌘1, ⌘2, ⌘3 | Transcript, AI notes, My notes |
+| ⌘⇧C | Copy the open tab |
+| ⌘⇧E | Export as Markdown |
 | ⌃⌘S | Toggle sidebar |
 | ⌘, | Settings |
 

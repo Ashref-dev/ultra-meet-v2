@@ -8,8 +8,11 @@ struct AnalysisSettings: View {
     @State private var editing: AnalysisTemplate?
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            SettingsSection(title: "OpenRouter key", footer: "Stored in your macOS Keychain. Only text is sent (the transcript and your notes), and only when you click Analyze with AI.") {
+            SettingsSection(title: "OpenRouter key", footer: "Stored in your macOS Keychain. Only text is sent (the transcript and your notes), and only when you click Analyze with AI or turn on analysis after transcription.") {
                 OpenRouterKeyField(state: state)
+            }
+            SettingsSection(title: "Automatic notes") {
+                SettingsToggle(title: "Analyze after transcription", detail: "Writes AI notes as soon as a meeting is transcribed, with the selected template. Sends the transcript text to OpenRouter each time.", isOn: $state.preferences.analyzeAfterTranscription)
             }
             SettingsSection(title: "Model", footer: "Prices and data policies are the provider’s. Larger models write better notes; fast ones answer in seconds.") {
                 SettingsRow(title: state.preferences.openRouterModel.components(separatedBy: "/").last ?? state.preferences.openRouterModel, detail: state.preferences.openRouterModel) {
@@ -185,6 +188,7 @@ struct ModelCatalog: View {
                         }
                         .buttonStyle(.plain)
                         .focusEffectDisabled()
+                        .listRowBackground(Color.clear.thinScrollbars())
                     }
                     .listStyle(.inset)
                     .scrollContentBackground(.hidden)

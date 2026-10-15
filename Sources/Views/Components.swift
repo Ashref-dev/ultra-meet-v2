@@ -208,7 +208,7 @@ struct TabStrip: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var body: some View {
         HStack(spacing: 4) {
-            ForEach(tabs) { tab in
+            ForEach(Array(tabs.enumerated()), id: \.element.id) { index, tab in
                 Button { withAnimation(reduceMotion ? nil : Theme.selection) { selection = tab.id } } label: {
                     HStack(spacing: 6) {
                         Image(systemName: tab.symbol).font(.system(size: 11, weight: .semibold))
@@ -228,6 +228,8 @@ struct TabStrip: View {
                 }
                 .buttonStyle(PressStyle())
                 .focusEffectDisabled()
+                .keyboardShortcut(KeyEquivalent(Character(String(index + 1))), modifiers: .command)
+                .help("\(tab.id) (⌘\(index + 1))")
                 .accessibilityAddTraits(selection == tab.id ? [.isSelected, .isButton] : .isButton)
             }
             Spacer(minLength: 0)
@@ -268,8 +270,10 @@ struct RowStyle: ButtonStyle {
                     in: RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous)
                 )
                 .contentShape(Rectangle())
+                .scaleEffect(configuration.isPressed && !reduceMotion ? 0.985 : 1)
                 .onHover { hovering = $0 }
                 .animation(reduceMotion ? nil : Theme.feedback, value: hovering)
+                .animation(reduceMotion ? nil : Theme.feedback, value: configuration.isPressed)
                 .animation(reduceMotion ? nil : Theme.selection, value: selected)
         }
     }
@@ -279,17 +283,70 @@ struct RowStyle: ButtonStyle {
 struct SearchField: View {
     let prompt: String
     @Binding var text: String
+    /// ⌘F focuses the field when set; the hint shows while it is empty and unfocused.
+    var findShortcut = false
+    @FocusState private var focused: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var body: some View {
         HStack(spacing: 8) {
-            Image(systemName: "magnifyingglass").font(.system(size: 11)).foregroundStyle(Theme.secondary)
-            TextField(prompt, text: $text).textFieldStyle(.plain).font(.system(size: 12.5))
+            Image(systemName: "magnifyingglass").font(.system(size: 11)).foregroundStyle(focused ? Theme.orange : Theme.secondary)
+            TextField(prompt, text: $text).textFieldStyle(.plain).font(.system(size: 12.5)).focused($focused)
+                .onExitCommand { text = ""; focused = false }
             if !text.isEmpty {
                 Button { text = "" } label: { Image(systemName: "xmark.circle.fill") }
                     .buttonStyle(.plain).foregroundStyle(Theme.secondary).accessibilityLabel("Clear search")
+                    .transition(.opacity)
+            } else if findShortcut && !focused {
+                ShortcutHint("⌘F").transition(.opacity)
             }
         }
         .padding(.horizontal, 10).frame(height: Theme.controlHeight)
-        .field()
+        .field(focused: focused)
+        .animation(reduceMotion ? nil : Theme.feedback, value: focused)
+        .animation(reduceMotion ? nil : Theme.feedback, value: text.isEmpty)
+        .background {
+            if findShortcut {
+                Button("Find") { focused = true }.keyboardShortcut("f").opacity(0).allowsHitTesting(false).accessibilityHidden(true)
+            }
+        }
+    }
+}
+
+/// Plain keys (no modifiers) pressed in this view's window. Skipped while text is being edited or a sheet is open, so
+/// typing is never captured. `handle` returns whether it used the key.
+struct KeyMonitor: NSViewRepresentable {
+    let handle: (UInt16) -> Bool
+    func makeNSView(context: Context) -> Monitor { Monitor() }
+    func updateNSView(_ view: Monitor, context: Context) { view.handle = handle }
+    final class Monitor: NSView {
+        var handle: ((UInt16) -> Bool)?
+        private var token: Any?
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            if let token { NSEvent.removeMonitor(token) }
+            token = nil
+            guard window != nil else { return }
+            token = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+                let used = MainActor.assumeIsolated { () -> Bool in
+                    guard let self, let window = self.window, event.window === window, window.isKeyWindow,
+                          !(window.firstResponder is NSText),
+                          event.modifierFlags.intersection([.command, .option, .control, .shift]).isEmpty else { return false }
+                    return self.handle?(event.keyCode) == true
+                }
+                return used ? nil : event
+            }
+        }
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    }
+    static let up: UInt16 = 126, down: UInt16 = 125, delete: UInt16 = 51, forwardDelete: UInt16 = 117, space: UInt16 = 49
+}
+
+/// A keyboard shortcut shown quietly beside the control it triggers.
+struct ShortcutHint: View {
+    let keys: String
+    init(_ keys: String) { self.keys = keys }
+    var body: some View {
+        Text(keys).font(.system(size: 11, weight: .medium)).secondaryText().opacity(0.8).accessibilityHidden(true)
     }
 }
 
@@ -312,8 +369,17 @@ extension View {
     func glassSurface(cornerRadius: CGFloat = Theme.radius, tint: Color? = nil, interactive: Bool = false) -> some View {
         modifier(GlassSurface(cornerRadius: cornerRadius, tint: tint, interactive: interactive))
     }
-    func sidebarSurface() -> some View { background { ChromeSurface(material: .sidebar).ignoresSafeArea() } }
-}
+    /// A sidebar floating on the window's own color: same fill as the main area, a hairline and a soft shadow.
+    func floatingSidebar(_ fill: Color) -> some View {
+        let shape = RoundedRectangle(cornerRadius: Theme.radius, style: .continuous)
+        return background(fill, in: shape)
+            .overlay(shape.strokeBorder(Theme.line))
+            .compositingGroup()
+            .shadow(color: Theme.controlShadow, radius: 12, y: 3)
+            .padding(.leading, 8).padding(.bottom, 8)
+    }
+    /// Ultra-thin overlay scrollbars with no track; apply inside the scrolled content (or a list row background).
+    func thinScrollbars() -> some View { background(ScrollerHook()) }}
 
 /// Neighboring glass controls share one renderer, so they blend instead of stacking.
 struct GlassControls<Content: View>: View {
@@ -348,20 +414,6 @@ private struct GlassSurface: ViewModifier {
     }
 }
 
-/// Native translucent chrome: the system material untouched, so macOS 26 and later render true Liquid Glass.
-private struct ChromeSurface: View {
-    let material: NSVisualEffectView.Material
-    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
-    @Environment(\.colorSchemeContrast) private var contrast
-    var body: some View {
-        if reduceTransparency || contrast == .increased {
-            Theme.background
-        } else {
-            NativeMaterial(material: material)
-        }
-    }
-}
-
 private struct PanelGlass: ViewModifier {
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.colorSchemeContrast) private var contrast
@@ -376,6 +428,49 @@ private struct PanelGlass: ViewModifier {
             panel.background { NativeMaterial(material: .popover) }.clipShape(shape).overlay(shape.strokeBorder(Theme.line))
         }
     }
+}
+
+/// Finds the enclosing scroll view once it is in a window and gives it the thin scroller.
+private struct ScrollerHook: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView { Hook() }
+    func updateNSView(_ view: NSView, context: Context) {}
+    final class Hook: NSView {
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            DispatchQueue.main.async { [weak self] in
+                guard let scroll = self?.enclosingScrollView, !(scroll.verticalScroller is ThinScroller) else { return }
+                scroll.verticalScroller = ThinScroller()
+                scroll.scrollerStyle = .overlay
+                scroll.autohidesScrollers = true
+            }
+        }
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    }
+}
+
+/// A 3 pt rounded knob with no track that widens to 6 pt under the pointer, in the warm secondary color.
+final class ThinScroller: NSScroller {
+    private var hovering = false {
+        didSet { if hovering != oldValue { needsDisplay = true } }
+    }
+    override class var isCompatibleWithOverlayScrollers: Bool { true }
+    override class func scrollerWidth(for controlSize: NSControl.ControlSize, scrollerStyle: NSScroller.Style) -> CGFloat { 12 }
+    override func drawKnobSlot(in slotRect: NSRect, highlight flag: Bool) {}
+    override func drawKnob() {
+        let knob = rect(for: .knob)
+        guard knob.height > 0 else { return }
+        let width: CGFloat = hovering ? 6 : 3
+        let bar = NSRect(x: bounds.maxX - width - 3, y: knob.minY + 3, width: width, height: max(width, knob.height - 6))
+        NSColor(Theme.secondary).withAlphaComponent(hovering ? 0.6 : 0.38).setFill()
+        NSBezierPath(roundedRect: bar, xRadius: width / 2, yRadius: width / 2).fill()
+    }
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        trackingAreas.forEach(removeTrackingArea)
+        addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeInActiveApp, .inVisibleRect], owner: self))
+    }
+    override func mouseEntered(with event: NSEvent) { hovering = true }
+    override func mouseExited(with event: NSEvent) { hovering = false }
 }
 
 private struct NativeMaterial: NSViewRepresentable {
@@ -517,10 +612,11 @@ struct DotWaveform: View {
     var paused = false
     var spacing: CGFloat = 6
     @Environment(\.offscreen) private var offscreen
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var body: some View {
         DotMatrix(meter: live && !offscreen ? meter : .still, live: live, spacing: spacing)
             .opacity(paused ? 0.4 : 1)
-            .animation(Theme.feedback, value: paused)
+            .animation(reduceMotion ? nil : Theme.feedback, value: paused)
             .accessibilityElement()
             .accessibilityLabel(live ? (paused ? "Recording paused" : "Live audio levels") : "Waveform")
     }

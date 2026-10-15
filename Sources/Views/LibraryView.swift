@@ -1,9 +1,11 @@
 import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct LibraryView: View {
     @ObservedObject var state: AppState
     @State private var deleteID: UUID?
+    @State private var dropTargeted = false
     @AppStorage("sidebarCollapsed") private var collapsed = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// A sized image preserves the circle and colors inside AppKit's native swipe action.
@@ -34,15 +36,32 @@ struct LibraryView: View {
     var body: some View {
         HStack(spacing: 0) {
             if !collapsed {
-                sidebar.frame(width: 280).sidebarSurface()
+                sidebar.frame(width: 272).floatingSidebar(Theme.paper)
                     .transition(.move(edge: .leading).combined(with: .opacity))
             }
             Group {
                 if let meeting = state.selected { MeetingDetail(state: state, meeting: meeting) } else { emptyState }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(Theme.paper.ignoresSafeArea())
         }
+        .background(Theme.paper.ignoresSafeArea())
+        .overlay { if dropTargeted { dropHint.transition(.opacity) } }
+        .animation(reduceMotion ? nil : Theme.feedback, value: dropTargeted)
+        .dropDestination(for: URL.self) { urls, _ in
+            guard state.canStart, let url = urls.first(where: { UTType(filenameExtension: $0.pathExtension)?.conforms(to: .audio) == true }) else { return false }
+            state.importAudio(from: url)
+            return true
+        } isTargeted: { dropTargeted = $0 && state.canStart }
+        .background(KeyMonitor { key in
+            switch key {
+            case KeyMonitor.up, KeyMonitor.down: return select(step: key == KeyMonitor.down ? 1 : -1)
+            case KeyMonitor.delete, KeyMonitor.forwardDelete:
+                guard let id = state.selectedID, !state.isProtected(id) else { return false }
+                deleteID = id
+                return true
+            default: return false
+            }
+        })
         .animation(reduceMotion ? nil : Theme.selection, value: collapsed)
         .frame(minWidth: collapsed ? 560 : 820, minHeight: 560)
         .alert("Something needs your attention", isPresented: Binding(get: { state.error != nil }, set: { if !$0 { state.error = nil } })) {
@@ -83,8 +102,9 @@ struct LibraryView: View {
                 }
             }
             .padding(.horizontal, 12)
-            SearchField(prompt: "Search meetings", text: $state.search)
+            SearchField(prompt: "Search meetings", text: $state.search, findShortcut: true)
                 .padding(.horizontal, 12).padding(.top, 8).padding(.bottom, 8)
+            ScrollViewReader { proxy in
             List(results) { meeting in
                 Button { state.selectedID = meeting.id } label: {
                     VStack(alignment: .leading, spacing: 6) {
@@ -105,7 +125,7 @@ struct LibraryView: View {
                 .selectionDisabled()
                 .listRowInsets(EdgeInsets(top: 1, leading: 10, bottom: 1, trailing: 10))
                 .listRowSeparator(.hidden)
-                .listRowBackground(Color.clear)
+                .listRowBackground(Color.clear.thinScrollbars())
                 .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                     if !state.isProtected(meeting.id) {
                         // The swipe requests confirmation; only the confirmed action is destructive.
@@ -129,10 +149,35 @@ struct LibraryView: View {
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
             .environment(\.defaultMinListRowHeight, 0)
+            .onChange(of: state.selectedID) { _, id in
+                guard let id else { return }
+                withAnimation(reduceMotion ? nil : Theme.selection) { proxy.scrollTo(id) }
+            }
             .overlay {
                 if results.isEmpty && !state.meetings.isEmpty { Text("No matches").font(.system(size: 12)).foregroundStyle(Theme.secondary) }
             }
+            }
         }
+    }
+    /// Moves the selection through the visible meetings with the arrow keys.
+    func select(step: Int) -> Bool {
+        let results = filtered
+        guard !results.isEmpty else { return false }
+        let current = results.firstIndex { $0.id == state.selectedID }
+        let next = current.map { min(max($0 + step, 0), results.count - 1) } ?? 0
+        state.selectedID = results[next].id
+        return true
+    }
+    var dropHint: some View {
+        VStack(spacing: 8) {
+            Image(systemName: "waveform.badge.plus").font(.system(size: 28, weight: .medium)).foregroundStyle(Theme.orange)
+            Text("Drop audio to transcribe it").font(.system(size: 15, weight: .semibold))
+            MonoLabel("WAV, M4A, MP3, AIFF, FLAC")
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Theme.paper.opacity(0.85))
+        .overlay(RoundedRectangle(cornerRadius: Theme.radius, style: .continuous).strokeBorder(Theme.orange, style: StrokeStyle(lineWidth: 2, dash: [6, 5])).padding(8))
+        .allowsHitTesting(false)
     }
     var emptyState: some View {
         VStack(spacing: 16) {

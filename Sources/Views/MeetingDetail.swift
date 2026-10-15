@@ -51,6 +51,12 @@ struct MeetingDetail: View {
         .onChange(of: state.activeID) { _, id in if id != nil { playback.stop() } }
         .onChange(of: meeting.audioDeleted) { _, deleted in if deleted { playback.stop() } }
         .onDisappear { playback.stop() }
+        .background(KeyMonitor { key in
+            // Space plays or pauses a finished meeting's audio; it never starts or stops a recording.
+            guard key == KeyMonitor.space, canSeek, !isLive, !isTranscribing else { return false }
+            if playback.duration > 0 { playback.togglePause() } else { play(audioFiles) }
+            return true
+        })
         .onReceive(playback.clock.$position) { position in
             let line = playback.duration > 0 ? playingLine(at: position) : nil
             if line != playingLineID { playingLineID = line }
@@ -74,11 +80,23 @@ struct MeetingDetail: View {
                 Spacer()
                 GlassControls {
                     HStack(spacing: 8) {
-                        Button { copyContent() } label: { Label(copied ? "Copied" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc").contentTransition(reduceMotion ? .identity : .symbolEffect(.replace)) }
-                            .buttonStyle(ControlStyle(compact: true)).animation(reduceMotion ? nil : Theme.feedback, value: copied)
-                            .help("Copy the \(tab.lowercased())")
-                        Button { state.export(meeting) } label: { Label("Export", systemImage: "square.and.arrow.up") }
-                            .buttonStyle(ControlStyle(compact: true)).help("Export everything as Markdown")
+                        Button { copyContent() } label: {
+                            HStack(spacing: 6) {
+                                Label(copied ? "Copied" : "Copy \(tab == "Transcript" ? "transcript" : tab == "AI notes" ? "AI notes" : "my notes")", systemImage: copied ? "checkmark" : "doc.on.doc")
+                                    .contentTransition(reduceMotion ? .identity : .symbolEffect(.replace))
+                                ShortcutHint("⌘⇧C")
+                            }
+                        }
+                        .buttonStyle(ControlStyle(compact: true)).animation(reduceMotion ? nil : Theme.feedback, value: copied)
+                        .keyboardShortcut("c", modifiers: [.command, .shift])
+                        .disabled(copyText.isEmpty)
+                        .help(copyText.isEmpty ? "Nothing to copy yet" : "Copy the \(tab == "AI notes" ? "AI notes" : tab.lowercased()) (⌘⇧C)")
+                        Button { state.export(meeting) } label: {
+                            HStack(spacing: 6) { Label("Export", systemImage: "square.and.arrow.up"); ShortcutHint("⌘⇧E") }
+                        }
+                        .buttonStyle(ControlStyle(compact: true))
+                        .keyboardShortcut("e", modifiers: [.command, .shift])
+                        .help("Export everything as Markdown (⌘⇧E)")
                         actions
                     }
                 }
@@ -86,8 +104,9 @@ struct MeetingDetail: View {
             EditableTitle(title: meeting.title, size: 26) { state.rename(meeting.id, to: $0) }
                 .padding(.top, 8)
             HStack(spacing: 12) {
-                MonoLabel(meeting.createdAt.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated).year().hour().minute()))
-                MonoLabel(Meeting.timestamp(isActive ? state.elapsed : meeting.duration))
+                MonoLabel(([meeting.createdAt.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated).year().hour().minute()), Meeting.timestamp(isActive ? state.elapsed : meeting.duration)]
+                    + (meeting.segments.isEmpty || isActive ? [] : [meeting.model.fullName])).joined(separator: " · "))
+                    .help(meeting.segments.isEmpty || isActive ? "" : "Transcribed with \(meeting.model.fullName)")
                 Spacer()
                 if !speakers.isEmpty {
                     HStack(spacing: 8) {
@@ -167,8 +186,16 @@ struct MeetingDetail: View {
                     }
                     .frame(maxWidth: Theme.readingWidth + 84, alignment: .leading)
                     if let audioNotice, !isActive {
-                        InlineHint(symbol: "speaker.slash", text: audioNotice, action: meeting.audioDeleted ? nil : ("Show in Finder", { NSWorkspace.shared.open(state.library.folder(meeting.id)) }))
-                            .frame(maxWidth: Theme.readingWidth + 84)
+                        HStack(spacing: 6) {
+                            Image(systemName: "speaker.slash").font(.system(size: 10.5, weight: .medium))
+                            Text(meeting.audioDeleted ? "Audio deleted. The transcript and notes are kept." : "Audio files are missing from this meeting’s folder.")
+                            if !meeting.audioDeleted {
+                                Button("Show in Finder") { NSWorkspace.shared.open(state.library.folder(meeting.id)) }
+                                    .buttonStyle(.plain).foregroundStyle(Theme.orange)
+                            }
+                        }
+                        .font(.system(size: 11.5)).foregroundStyle(Theme.secondary)
+                        .help(audioNotice)
                     }
                     if let suggestion = state.termSuggestion, suggestion.meetingID == meeting.id {
                         InlineHint(symbol: "text.badge.plus", text: "Add \(suggestion.terms.map { "“\($0)”" }.formatted(.list(type: .and))) to Names and terms, so it’s recognized next time?",
@@ -183,6 +210,7 @@ struct MeetingDetail: View {
                 .padding(.horizontal, 24).padding(.vertical, 24)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .animation(reduceMotion ? nil : Theme.feedback, value: state.termSuggestion)
+                .thinScrollbars()
             }
             .onChange(of: playingLineID) { _, line in
                 guard let line, playback.playing else { return }
@@ -210,6 +238,7 @@ struct MeetingDetail: View {
                 }
                 .padding(.horizontal, 24).padding(.vertical, 24)
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .thinScrollbars()
             }
             .onChange(of: inProgress.count) { _, _ in withAnimation(reduceMotion ? nil : Theme.selection) { proxy.scrollTo("end", anchor: .bottom) } }
         }
@@ -293,10 +322,16 @@ struct MeetingDetail: View {
         do { try playback.play(urls, at: seconds) }
         catch { state.error = "This recording could not be played: \(error.localizedDescription)" }
     }
+    var copyText: String {
+        switch tab {
+        case "Transcript": return meeting.segments.isEmpty ? "" : meeting.transcript
+        case "My notes": return meeting.notes
+        default: return meeting.summary.isEmpty ? "" : meeting.shareableNotes
+        }
+    }
     func copyContent() {
-        let content = tab == "Transcript" ? meeting.transcript : tab == "My notes" ? meeting.notes : meeting.shareableNotes
         NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(content, forType: .string)
+        NSPasteboard.general.setString(copyText, forType: .string)
         copied = true
     }
 }
@@ -329,6 +364,7 @@ private struct PlayerBar: View {
             }
             .buttonStyle(ControlStyle(kind: .quiet, compact: true, square: true))
             .accessibilityLabel(playback.playing ? "Pause playback" : "Resume playback")
+            .help(playback.playing ? "Pause playback" : "Resume playback")
             MonoLabel(playback.sources.map { $0 == "microphone" ? "You" : $0 == "system" ? "Colleagues" : "Recording" }.joined(separator: " + "))
                 .lineLimit(1)
             Text(Meeting.timestamp(scrub ?? clock.position)).font(Theme.mono).monospacedDigit()
@@ -404,6 +440,7 @@ struct AnalysisView: View {
                     MarkdownNotes(text: meeting.summary).equatable().frame(maxWidth: Theme.readingWidth, alignment: .leading)
                 }
                 .padding(.horizontal, 24).padding(.vertical, 24).frame(maxWidth: .infinity, alignment: .leading)
+                .thinScrollbars()
             }
         }
     }

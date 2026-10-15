@@ -34,6 +34,7 @@ struct SetupView: View {
                 page
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 24).padding(.vertical, 16)
+                    .thinScrollbars()
             }
             .id(step)
             .transition(reduceMotion ? .opacity : .asymmetric(insertion: .opacity.combined(with: .offset(x: 16)), removal: .opacity))

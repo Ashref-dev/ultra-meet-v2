@@ -2,6 +2,14 @@
 
 What was verified for the current release, and how. Update this file with every release; say plainly what was not verified.
 
+## 0.7.1
+
+Environment: Apple Silicon, 24 GB memory, macOS 27, full Xcode. `swift test`: 49 pass (new checks: automatic analysis is off by default; model names in meeting headers). `basedpyright`: 0 errors. `ruff`: clean. Release build and strict signature verification passed.
+
+- Seen on screen by the owner in the installed builds: the frosted panel glass in light mode, the floating library sidebar, thin scrollbars, the Copy and Export labels with shortcut hints.
+- Not seen on screen: the panel in dark mode, typing in the panel and its More menu, arrow keys and ⌫ in the library, Space playback, dropping an audio file, the model name in the header, the one-line deleted-audio note, and Analyze after transcription. These were built and type-checked only.
+- Space is handled only for a finished meeting with audio, and never while text is being edited; it cannot start or stop a recording.
+
 ## 0.7.0
 
 Environment: Apple Silicon, 24 GB memory, macOS 27, full Xcode. `swift test`: 49 pass (two new: per-model languages and preferences decoding; deleting one model leaves the others). `basedpyright`: 0 errors. `ruff`: clean.
