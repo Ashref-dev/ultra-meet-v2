@@ -301,7 +301,7 @@ extension View {
             .overlay(RoundedRectangle(cornerRadius: Theme.radius, style: .continuous).strokeBorder(Theme.line))
     }
     func secondaryText() -> some View { modifier(SecondaryText()) }
-    /// The menu-bar panel: clear Liquid Glass tinted toward white in light mode and black in dark mode.
+    /// The menu-bar panel: frosted Liquid Glass tinted toward white in light mode and black in dark mode.
     func panelGlass() -> some View { modifier(PanelGlass()) }
     /// Text input surface; focus is drawn in orange, never the system ring.
     func field(focused: Bool = false) -> some View {
@@ -371,7 +371,7 @@ private struct PanelGlass: ViewModifier {
         if reduceTransparency || contrast == .increased {
             panel.background(Theme.background, in: shape).overlay(shape.strokeBorder(Theme.secondary.opacity(0.6)))
         } else if #available(macOS 26.0, *) {
-            panel.glassEffect(.clear.tint(Theme.glassTint), in: shape)
+            panel.glassEffect(.regular.tint(Theme.glassTint), in: shape)
         } else {
             panel.background { NativeMaterial(material: .popover) }.clipShape(shape).overlay(shape.strokeBorder(Theme.line))
         }
