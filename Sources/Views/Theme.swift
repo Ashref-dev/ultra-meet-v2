@@ -30,7 +30,7 @@ enum Theme {
     static let line = adaptive(light: NSColor(white: 0, alpha: 0.09), dark: NSColor(white: 1, alpha: 0.10))
     static let selectionFill = orange.opacity(0.12)
     /// Tint of the panel's clear glass: lighter in light mode, darker in dark mode, see-through in both.
-    static let glassTint = adaptive(light: NSColor(white: 1, alpha: 0.3), dark: NSColor(white: 0, alpha: 0.4))
+    static let glassTint = adaptive(light: NSColor(white: 1, alpha: 0.4), dark: NSColor(white: 0, alpha: 0.5))
     static let controlShadow = Color.black.opacity(0.08)
     static let mono = Font.system(size: 11, weight: .medium, design: .monospaced)
     static func speakerColor(_ source: String) -> Color {
