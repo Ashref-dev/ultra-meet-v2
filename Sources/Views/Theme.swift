@@ -29,6 +29,7 @@ enum Theme {
     static let secondary = adaptive(light: NSColor(red: 0.43, green: 0.39, blue: 0.35, alpha: 1), dark: NSColor(red: 0.73, green: 0.70, blue: 0.66, alpha: 1))
     static let line = adaptive(light: NSColor(white: 0, alpha: 0.09), dark: NSColor(white: 1, alpha: 0.10))
     static let selectionFill = orange.opacity(0.12)
+    static let glassVeil = adaptive(light: NSColor(white: 1, alpha: 0.45), dark: .clear)
     static let controlShadow = Color.black.opacity(0.08)
     static let mono = Font.system(size: 11, weight: .medium, design: .monospaced)
     static func speakerColor(_ source: String) -> Color {

@@ -4,7 +4,7 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 
 ## Unreleased
 
-- The menu-bar panel and the library and Settings sidebars show clear Liquid Glass again; 0.7.0 covered them with a warm tint.
+- The menu-bar panel uses the native Liquid Glass of macOS 26 and later, lightened in light mode so dark text stays clear. The library and Settings sidebars no longer have the warm tint from 0.7.0.
 
 ## 0.7.0 · 2026-10-15
 

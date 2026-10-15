@@ -337,6 +337,10 @@ private struct ChromeSurface: View {
     var body: some View {
         if reduceTransparency || contrast == .increased {
             Theme.background
+        } else if material == .popover {
+            // The popover is native Liquid Glass on macOS 26 and later; a white veil in light mode keeps it bright
+            // behind dark content, so dark text stays crisp.
+            if #available(macOS 26.0, *) { Theme.glassVeil } else { NativeMaterial(material: material).overlay(Theme.glassVeil) }
         } else {
             NativeMaterial(material: material)
         }
