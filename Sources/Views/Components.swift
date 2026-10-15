@@ -4,10 +4,24 @@ import SwiftUI
 /// Uppercase monospaced metadata label, the reference design's signature voice.
 struct MonoLabel: View {
     let text: String
-    var color: Color = Theme.secondary
-    init(_ text: String, color: Color = Theme.secondary) { self.text = text; self.color = color }
+    var color: Color?
+    init(_ text: String, color: Color? = nil) { self.text = text; self.color = color }
     var body: some View {
-        Text(text.uppercased()).font(Theme.mono).tracking(0.6).foregroundStyle(color).lineLimit(1)
+        let label = Text(text.uppercased()).font(Theme.mono).tracking(0.6).lineLimit(1)
+        if let color { label.foregroundStyle(color) } else { label.secondaryText() }
+    }
+}
+
+extension EnvironmentValues {
+    /// True on the menu-bar panel's Liquid Glass; paper cards set it back to false.
+    @Entry var onGlass = false
+}
+
+/// Secondary text: the warm gray on paper, the system's vibrant secondary on glass so it reads over any background.
+private struct SecondaryText: ViewModifier {
+    @Environment(\.onGlass) private var onGlass
+    func body(content: Content) -> some View {
+        content.foregroundStyle(onGlass ? AnyShapeStyle(.secondary) : AnyShapeStyle(Theme.secondary))
     }
 }
 
@@ -32,10 +46,12 @@ struct ControlStyle: ButtonStyle {
         @Environment(\.accessibilityReduceMotion) private var reduceMotion
         @State private var hovering = false
         var height: CGFloat { compact ? Theme.compactControlHeight : Theme.controlHeight }
-        var foreground: Color {
-            if kind == .primary { return .white }
-            if configuration.role == .destructive { return Theme.destructive }
-            return kind == .quiet && !hovering ? Theme.secondary : .primary
+        @Environment(\.onGlass) private var onGlass
+        var foreground: AnyShapeStyle {
+            if kind == .primary { return AnyShapeStyle(.white) }
+            if configuration.role == .destructive { return AnyShapeStyle(Theme.destructive) }
+            guard kind == .quiet && !hovering else { return AnyShapeStyle(.primary) }
+            return onGlass ? AnyShapeStyle(.secondary) : AnyShapeStyle(Theme.secondary)
         }
         var body: some View {
             let shape = RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous)
@@ -280,9 +296,13 @@ struct SearchField: View {
 extension View {
     /// Paper surface with a hairline border, for grouped content.
     func card() -> some View {
-        background(Theme.paper, in: RoundedRectangle(cornerRadius: Theme.radius, style: .continuous))
+        environment(\.onGlass, false)
+            .background(Theme.paper, in: RoundedRectangle(cornerRadius: Theme.radius, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: Theme.radius, style: .continuous).strokeBorder(Theme.line))
     }
+    func secondaryText() -> some View { modifier(SecondaryText()) }
+    /// The menu-bar panel: clear Liquid Glass tinted toward white in light mode and black in dark mode.
+    func panelGlass() -> some View { modifier(PanelGlass()) }
     /// Text input surface; focus is drawn in orange, never the system ring.
     func field(focused: Bool = false) -> some View {
         background(Theme.paper, in: RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous))
@@ -293,7 +313,6 @@ extension View {
         modifier(GlassSurface(cornerRadius: cornerRadius, tint: tint, interactive: interactive))
     }
     func sidebarSurface() -> some View { background { ChromeSurface(material: .sidebar).ignoresSafeArea() } }
-    func popoverSurface() -> some View { background { ChromeSurface(material: .popover).ignoresSafeArea() } }
 }
 
 /// Neighboring glass controls share one renderer, so they blend instead of stacking.
@@ -337,12 +356,24 @@ private struct ChromeSurface: View {
     var body: some View {
         if reduceTransparency || contrast == .increased {
             Theme.background
-        } else if material == .popover {
-            // The popover is native Liquid Glass on macOS 26 and later; a white veil in light mode keeps it bright
-            // behind dark content, so dark text stays crisp.
-            if #available(macOS 26.0, *) { Theme.glassVeil } else { NativeMaterial(material: material).overlay(Theme.glassVeil) }
         } else {
             NativeMaterial(material: material)
+        }
+    }
+}
+
+private struct PanelGlass: ViewModifier {
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.colorSchemeContrast) private var contrast
+    @ViewBuilder func body(content: Content) -> some View {
+        let shape = RoundedRectangle(cornerRadius: Theme.radius, style: .continuous)
+        let panel = content.environment(\.onGlass, true)
+        if reduceTransparency || contrast == .increased {
+            panel.background(Theme.background, in: shape).overlay(shape.strokeBorder(Theme.secondary.opacity(0.6)))
+        } else if #available(macOS 26.0, *) {
+            panel.glassEffect(.clear.tint(Theme.glassTint), in: shape)
+        } else {
+            panel.background { NativeMaterial(material: .popover) }.clipShape(shape).overlay(shape.strokeBorder(Theme.line))
         }
     }
 }

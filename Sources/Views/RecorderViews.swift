@@ -9,7 +9,8 @@ struct RecorderControls: View {
         HStack(spacing: 10) {
             Text(Meeting.timestamp(recording ? state.elapsed : 0))
                 .font(.system(size: 13, weight: .medium, design: .monospaced)).monospacedDigit()
-                .foregroundStyle(recording && !state.recorder.paused ? Color.primary : Theme.secondary)
+                .foregroundStyle(.primary)
+                .opacity(recording && !state.recorder.paused ? 1 : 0.55)
                 .contentTransition(.numericText())
                 .accessibilityLabel("Elapsed time \(Meeting.timestamp(state.elapsed))")
             Spacer(minLength: 12)
@@ -78,7 +79,7 @@ struct MeetingRow: View {
                 status
                 Spacer(minLength: 4)
                 Text(Meeting.timestamp(meeting.id == state.activeID ? state.elapsed : meeting.duration))
-                    .font(Theme.mono).foregroundStyle(Theme.secondary).monospacedDigit()
+                    .font(Theme.mono).secondaryText().monospacedDigit()
             }
         }
         .contentShape(Rectangle())

@@ -34,7 +34,7 @@ struct MenuBarPanel: View {
             if !recording && !recent.isEmpty { recentList }
         }
         .frame(width: 380)
-        .popoverSurface()
+        .panelGlass()
         .animation(reduceMotion ? nil : Theme.selection, value: recording)
         .animation(reduceMotion ? nil : Theme.feedback, value: state.error)
     }

@@ -4,11 +4,15 @@ import SwiftUI
 
 /// Native status item: left-click opens the recorder panel, right-click (or Control-click) opens quick actions.
 @MainActor
-final class StatusBarController: NSObject, NSPopoverDelegate {
+final class StatusBarController: NSObject, NSWindowDelegate {
     private let state: AppState
     private let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-    private let popover = NSPopover()
+    /// A borderless panel rather than an NSPopover: the popover always draws its own frosted frame, which would hide
+    /// the clear Liquid Glass the panel's content draws.
+    private let panel = GlassPanel()
     private let visibility = Visibility()
+    private var outsideClicks: Any?
+    private var sizing: NSKeyValueObservation?
     private var subscriptions = Set<AnyCancellable>()
     private var appearance = ""
     private var ripple: Timer?
@@ -29,10 +33,17 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
         // Built once and reused: opening the panel only shows it, it never rebuilds the view tree.
         let host = NSHostingController(rootView: SurfaceRoot(visibility: visibility, content: MenuBarPanel(state: state)))
         host.sizingOptions = [.preferredContentSize]
-        popover.contentViewController = host
-        popover.delegate = self
-        popover.behavior = .transient
-        popover.animates = true
+        panel.contentViewController = host
+        // The panel follows the content's size, keeping its top edge under the status item.
+        sizing = host.observe(\.preferredContentSize, options: [.initial, .new]) { [weak self] host, _ in
+            MainActor.assumeIsolated {
+                guard let self, host.preferredContentSize != .zero else { return }
+                self.panel.setContentSize(host.preferredContentSize)
+                self.place()
+            }
+        }
+        panel.delegate = self
+        panel.onEscape = { [weak self] in self?.closePanel() }
         state.objectWillChange
             .receive(on: RunLoop.main)
             .sink { [weak self] in self?.refresh() }
@@ -49,15 +60,43 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
     }
 
     func showPanel() {
-        guard let button = item.button, !popover.isShown else { return }
+        guard !panel.isVisible else { return }
         visibility.shown = true
+        place()
+        panel.alphaValue = 0
         NSApp.activate()
-        popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-        popover.contentViewController?.view.window?.makeKey()
-        popover.contentViewController?.view.window?.makeFirstResponder(nil)
+        panel.makeKeyAndOrderFront(nil)
+        panel.makeFirstResponder(nil)
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.16
+            panel.animator().alphaValue = 1
+        }
+        DispatchQueue.main.async { [panel] in panel.invalidateShadow() }
+        outsideClicks = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
+            MainActor.assumeIsolated { self?.closePanel() }
+        }
     }
-    func closePanel() { if popover.isShown { popover.performClose(nil) } }
-    func popoverDidClose(_ notification: Notification) { visibility.shown = false }
+    func closePanel() {
+        guard panel.isVisible else { return }
+        if let outsideClicks { NSEvent.removeMonitor(outsideClicks) }
+        outsideClicks = nil
+        panel.orderOut(nil)
+        visibility.shown = false
+    }
+    /// Centered under the status item, inside the screen, and kept there as the content grows or shrinks.
+    private func place() {
+        guard let anchor = item.button?.window?.frame, let screen = item.button?.window?.screen ?? NSScreen.main else { return }
+        let size = panel.frame.size
+        let x = min(max(anchor.midX - size.width / 2, screen.visibleFrame.minX + 8), screen.visibleFrame.maxX - size.width - 8)
+        panel.setFrameTopLeftPoint(NSPoint(x: x, y: anchor.minY - 6))
+    }
+    func windowDidResignKey(_ notification: Notification) {
+        // Menus opened from the panel keep it key; another window or app taking focus closes it, like a popover.
+        DispatchQueue.main.async { [weak self] in
+            guard let self, !self.panel.isKeyWindow, NSApp.keyWindow !== self.panel else { return }
+            self.closePanel()
+        }
+    }
 
     @objc private func clicked() {
         let event = NSApp.currentEvent
@@ -66,7 +105,7 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
             item.menu = menu()
             item.button?.performClick(nil)
             item.menu = nil
-        } else if popover.isShown {
+        } else if panel.isVisible {
             closePanel()
         } else {
             showPanel()
@@ -76,7 +115,7 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
     /// After one-click start, show "Recording" briefly, then hand focus back to the call.
     private func getOutOfTheWay() {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
-            guard let self, self.popover.isShown, self.state.activeID != nil else { return }
+            guard let self, self.panel.isVisible, self.state.activeID != nil else { return }
             self.closePanel()
             if !NSApp.windows.contains(where: { $0.isVisible && $0.canBecomeMain }) { NSApp.hide(nil) }
         }
@@ -179,6 +218,23 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
     }
 }
 
+/// Borderless, transparent window for the menu-bar panel; the SwiftUI content draws the glass and its shape.
+final class GlassPanel: NSPanel {
+    var onEscape: (() -> Void)?
+    init() {
+        super.init(contentRect: .zero, styleMask: [.borderless], backing: .buffered, defer: true)
+        isOpaque = false
+        backgroundColor = .clear
+        hasShadow = true
+        level = .statusBar
+        hidesOnDeactivate = false
+        isReleasedWhenClosed = false
+        collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary, .transient, .ignoresCycle]
+    }
+    override var canBecomeKey: Bool { true }
+    override func cancelOperation(_ sender: Any?) { onEscape?() }
+}
+
 /// NSMenuItem that runs a closure, keeping the status menu free of selector plumbing.
 final class ClosureMenuItem: NSMenuItem {
     private let handler: @MainActor () -> Void
@@ -190,3 +246,4 @@ final class ClosureMenuItem: NSMenuItem {
     required init(coder: NSCoder) { fatalError("Not used") }
     @objc private func run() { MainActor.assumeIsolated { handler() } }
 }
+
