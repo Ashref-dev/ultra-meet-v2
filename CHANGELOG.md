@@ -2,6 +2,16 @@
 
 All notable changes are listed here. Versions follow [Semantic Versioning](https://semver.org): `0.x` releases may still change behavior between minor versions.
 
+## 0.7.0 · 2026-10-15
+
+- A library of local speech models in Settings → Transcription: Whisper Large v3 Turbo, Cohere Transcribe and Cohere Transcribe Arabic, Parakeet TDT v3, Granite Speech 4.0 and Voxtral Mini Realtime join Qwen3-ASR. Download or delete each one; size, memory and speed are shown for every model.
+- Languages follow the model: several per meeting for Qwen3-ASR and Whisper, exactly one for Cohere, detected automatically for Parakeet, Granite and Voxtral. Transcribe Again offers only what the meeting's model supports.
+- Native macOS styling from a contributor (thanks, Rayen): Liquid Glass controls on macOS 26 and later, a translucent sidebar and popover, a toolbar sidebar button, and swipe left on a library meeting to move it to the Trash.
+- One design across every surface: the warm palette, no system blue, 12 and 8 pt corners instead of capsules, and shared controls for menus, search and record buttons.
+- Faster opening and closing: live visuals pause while the panel or a window is hidden, model and audio-folder checks no longer read the disk while drawing, and windows paint before their first frame.
+- Reduce Transparency, Increase Contrast and Reduce Motion are honored everywhere.
+- Repeat builds work when Homebrew's `uv` is read-only.
+
 ## 0.6.1 · 2026-10-12
 
 - Meeting names in the sidebar and menu-bar panel get the full row width and wrap to two lines; the duration moved to the end of the date line. Long titles in a meeting's header wrap instead of being cut off.

@@ -2,6 +2,24 @@
 
 What was verified for the current release, and how. Update this file with every release; say plainly what was not verified.
 
+## 0.7.0
+
+Environment: Apple Silicon, 24 GB memory, macOS 27, full Xcode. `swift test`: 49 pass (two new: per-model languages and preferences decoding; deleting one model leaves the others). `basedpyright`: 0 errors. `ruff`: clean.
+
+### Speech models
+
+Each model was downloaded through `worker.py download` into a temporary folder and run on the `scripts/eval` meeting with `/usr/bin/time -l` (peak memory footprint, model load included), then deleted. Qwen3-ASR was re-run through the new engine dispatch and scored the same as before (Best and Balanced 0.047, Fast 0.115).
+
+- Whisper Large v3 Turbo, limited to English, Arabic and French: 0.115, nothing missed; "تمام" read as French and "Oui" labeled English.
+- Cohere Transcribe Arabic with Arabic chosen: 0.126; English and French lines were transcribed as spoken, so the chosen language is not used as a line label. The quietest English line (-56 dBFS) came out as Arabic.
+- Parakeet TDT v3 and Granite Speech 4.0: English and French exact, Arabic written in Latin letters (neither supports Arabic).
+- Voxtral Mini Realtime: 0.043, the lowest, at 39 s per minute and 7.0 GB.
+- Cohere Transcribe (general) was not run: its download did not finish on this network. It uses the same engine and weight size as the Arabic model, whose numbers Settings shows for it.
+
+### Interface
+
+Checked in the built app with Accessibility and screenshots: the library and its sidebar, the menu-bar panel, and Settings → Transcription with Best, Cohere Transcribe and Parakeet selected. The language section switches to a single choice for Cohere and to the list of detected languages for Parakeet, and says which chosen languages a model does not support. Downloading a model and deleting one were exercised by tests, not through the interface. Setup, the AI notes tab, recording and playback were not re-checked after the design pass.
+
 ## 0.6.1
 
 Checked in the built app: the library sidebar shows full AI titles on two lines with durations aligned at the right of the date line, short titles stay on one line, and a long title in the meeting header wraps. `swift test`: 47 pass.

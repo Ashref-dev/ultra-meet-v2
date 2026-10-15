@@ -6,7 +6,7 @@
 
 - **One click from the menu bar.** Meetings start instantly and name themselves. No window to manage, no Dock icon.
 - **Clear speaker labels.** Your microphone is recorded as **You** and your Mac's call audio as **Colleagues**, on separate tracks.
-- **Transcribed on your Mac, while you talk.** Qwen3-ASR runs locally on Apple Silicon and the transcript is ready seconds after you stop. Quiet voices and whispers are picked up. Audio is never uploaded.
+- **Transcribed on your Mac, while you talk.** Qwen3-ASR runs locally on Apple Silicon by default, with Whisper, Cohere, Parakeet, Granite and Voxtral one download away, and the transcript is ready seconds after you stop. Quiet voices and whispers are picked up. Audio is never uploaded.
 - **Multilingual by design.** People can switch languages sentence by sentence; you choose which languages your meetings use.
 - **AI notes on demand.** Click **Analyze with AI** to send the transcript text to the OpenRouter model you choose, with templates for different kinds of meetings.
 
@@ -46,15 +46,21 @@ Native macOS materials and, on macOS 26 and later, Liquid Glass controls over a 
 
 ## Speech models
 
-Measured on Apple Silicon while transcribing two minutes of real meeting audio.
+Download, switch and delete models in Settings → Transcription. Measured on Apple Silicon (24 GB) with the one-minute English, French and Arabic meeting from `scripts/eval`, model loading included. Error is the mean character error rate on its 13 lines.
 
-| Model | Peak memory | Speed | Recommended for |
-|---|---|---|---|
-| Fast · Qwen3-ASR 0.6B 8-bit | 1.9 GB | about 85× real time | 8 GB Macs |
-| Balanced · Qwen3-ASR 1.7B 8-bit | 3.5 GB | about 40× | 12 to 16 GB |
-| Best · Qwen3-ASR 1.7B BF16 | 5.0 GB | about 27× | 16 GB and up |
+| Model | Download | Peak memory | 1 min of audio | Error | Languages |
+|---|---|---|---|---|---|
+| Best · Qwen3-ASR 1.7B | 4.1 GB | 5.5 GB | 12 s | 0.047 | 30, several per meeting |
+| Balanced · Qwen3-ASR 1.7B 8-bit | 2.3 GB | 3.9 GB | 9 s | 0.047 | 30, several per meeting |
+| Fast · Qwen3-ASR 0.6B | 1 GB | 2.2 GB | 6 s | 0.115 | 30, several per meeting |
+| Whisper Large v3 Turbo (OpenAI) | 1.6 GB | 2.9 GB | 24 s | 0.115 | 100, several per meeting |
+| Cohere Transcribe Arabic | 2.4 GB | 3.1 GB | 8 s | 0.126 | Arabic and English, one at a time |
+| Cohere Transcribe | 2.4 GB | 3.1 GB | 8 s | not measured | 14, one at a time |
+| Parakeet TDT v3 (NVIDIA) | 2.5 GB | 4.3 GB | 6 s | 0.462 | 25 European, detected |
+| Granite Speech 4.0 (IBM) | 2.9 GB | 5.7 GB | 9 s | 0.429 | 6, detected |
+| Voxtral Mini Realtime (Mistral) | 3.2 GB | 7.0 GB | 39 s | 0.043 | 13, detected |
 
-Memory is used only while a meeting is being transcribed. Settings shows these numbers and recommends a model for your Mac.
+Qwen3-ASR and Whisper recognize each sentence as one of the languages you choose. Cohere transcribes the one language you choose and leaves other languages as they are. Parakeet, Granite and Voxtral detect the language themselves; Parakeet and Granite don't support Arabic, which is why their error is high on this test (English and French lines were exact). Memory is used only while a meeting is being transcribed.
 
 ## How transcription works
 
