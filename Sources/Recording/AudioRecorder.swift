@@ -1,5 +1,5 @@
-import AppKit
 import AVFoundation
+import Combine
 
 /// Live input levels, published separately so 12 Hz meter updates only redraw the visualizers.
 @MainActor
@@ -38,22 +38,22 @@ final class LevelMeter: ObservableObject {
 }
 
 @MainActor
-final class AudioRecorder: NSObject, ObservableObject, AVAudioRecorderDelegate {
+final class AudioRecorder: ObservableObject {
     @Published var paused = false
     let levels = LevelMeter()
-    private var microphone: AVAudioRecorder?
-    private var systemAudio: SystemAudioTap?
+    private var captures: [AudioCapture] = []
     private var meter: Timer?
     private var clock: RecordingClock?
+    private var microphoneLevel: Float = 0
     private var systemLevel: Float = 0
     private var captureID = UUID()
     var duration: Double { clock?.elapsed() ?? 0 }
     private(set) var captureFailure: String?
     var onError: ((String) -> Void)?
 
-    func start(folder: URL, source: AudioSource) async throws {
+    /// Records the chosen sides into `folder`, both from one shared start so You and Colleagues line up.
+    func start(folder: URL, source: AudioSource, microphone: String?) async throws {
         captureFailure = nil
-        microphone = nil
         captureID = UUID()
         let session = captureID
         if source != .system {
@@ -62,73 +62,54 @@ final class AudioRecorder: NSObject, ObservableObject, AVAudioRecorderDelegate {
         }
         try Task.checkCancellation()
         do {
-            if source != .microphone {
-                let output = SystemAudioTap()
-                let errorHandler = onError
-                output.onError = { [weak self] message in Task { @MainActor in
-                    if self?.captureID == session { self?.captureFailure = message }
-                    errorHandler?(message)
-                } }
-                output.onLevel = { [weak self] value in Task { @MainActor in
-                    if self?.captureID == session { self?.systemLevel = value }
-                } }
-                systemAudio = output
-                try output.start(url: folder.appendingPathComponent("system.caf"))
-            }
-            if source != .system {
-                microphone = try AVAudioRecorder(url: folder.appendingPathComponent("microphone.wav"), settings: [AVFormatIDKey: kAudioFormatLinearPCM, AVSampleRateKey: 48000, AVNumberOfChannelsKey: 1, AVLinearPCMBitDepthKey: 16, AVLinearPCMIsFloatKey: false])
-                microphone?.isMeteringEnabled = true
-                microphone?.delegate = self
-                guard microphone?.record() == true else { throw AppError.message("The microphone could not start. Check your input device in System Settings → Sound.") }
-            }
+            let started = AVAudioTime.seconds(forHostTime: AudioGetCurrentHostTime())
+            if source != .microphone { try begin(.system, file: folder.appendingPathComponent("system.caf"), started: started, session: session) }
+            if source != .system { try begin(.microphone(preferred: microphone), file: folder.appendingPathComponent("microphone.caf"), started: started, session: session) }
             paused = false
             clock = RecordingClock()
             levels.reset()
+            let recordsMicrophone = source != .system, recordsSystem = source != .microphone
             meter = Timer(timeInterval: 0.08, repeats: true) { [weak self] _ in
                 Task { @MainActor in
                     guard let self, !self.paused else { return }
-                    self.microphone?.updateMeters()
-                    let power = self.microphone?.averagePower(forChannel: 0) ?? 0
-                    let you = self.microphone == nil ? 0 : LevelMeter.normalized(decibels: power)
-                    let colleagues = LevelMeter.normalized(decibels: 20 * log10(max(self.systemLevel, 0.000_001)))
-                    self.levels.push(.init(you: you, colleagues: colleagues), interval: 0.08, silent: (self.microphone != nil && power <= -100, self.systemAudio != nil && self.systemLevel < 0.000_01))
+                    let you = recordsMicrophone ? Self.normalized(self.microphoneLevel) : 0
+                    self.levels.push(.init(you: you, colleagues: Self.normalized(self.systemLevel)), interval: 0.08,
+                                     silent: (recordsMicrophone && self.microphoneLevel < 0.000_01, recordsSystem && self.systemLevel < 0.000_01))
                 }
             }
             if let meter { RunLoop.main.add(meter, forMode: .common) }
         } catch { await stop(); throw error }
     }
+    private func begin(_ source: AudioCapture.Source, file: URL, started: Double, session: UUID) throws {
+        let capture = AudioCapture(source)
+        let errorHandler = onError
+        capture.onError = { [weak self] message in Task { @MainActor in
+            if self?.captureID == session { self?.captureFailure = message }
+            errorHandler?(message)
+        } }
+        let isSystem = source == .system
+        capture.onLevel = { [weak self] value in Task { @MainActor in
+            guard self?.captureID == session else { return }
+            if isSystem { self?.systemLevel = value } else { self?.microphoneLevel = value }
+        } }
+        captures.append(capture)
+        try capture.start(url: file, started: started)
+    }
+    private static func normalized(_ rms: Float) -> Float { LevelMeter.normalized(decibels: 20 * log10(max(rms, 0.000_001))) }
     func togglePause() {
         paused.toggle()
         if paused { clock?.pause() } else { clock?.resume() }
-        systemAudio?.setPaused(paused)
-        if paused { microphone?.pause() }
-        else if let microphone, !microphone.record() { onError?("The microphone could not resume. Check your input device.") }
+        captures.forEach { $0.setPaused(paused) }
     }
     func stop() async {
         meter?.invalidate()
         meter = nil
-        microphone?.stop()
-        systemAudio?.stop()
-        captureFailure = captureFailure ?? systemAudio?.captureFailure
-        systemAudio = nil
+        captures.forEach { $0.stop() }
+        captureFailure = captureFailure ?? captures.lazy.compactMap(\.captureFailure).first
+        captures = []
+        microphoneLevel = 0
         systemLevel = 0
         paused = false
         clock = nil
-    }
-    nonisolated func audioRecorderEncodeErrorDidOccur(_ recorder: AVAudioRecorder, error: Error?) {
-        let message = error?.localizedDescription ?? "The microphone recording could not be written."
-        Task { @MainActor in
-            self.microphoneFailed(recorder, message: message)
-        }
-    }
-    nonisolated func audioRecorderDidFinishRecording(_ recorder: AVAudioRecorder, successfully flag: Bool) {
-        if !flag { Task { @MainActor in
-            self.microphoneFailed(recorder, message: "The microphone recording ended unexpectedly.")
-        } }
-    }
-    func microphoneFailed(_ recorder: AVAudioRecorder, message: String) {
-        guard microphone === recorder else { return }
-        captureFailure = message
-        onError?(message)
     }
 }

@@ -74,7 +74,7 @@ enum OpenRouter {
         struct Message: Codable { let role: String; let content: String? }
         struct Body: Encodable { let model: String; let messages: [Message]; let temperature = 0.2; let max_tokens = 4000 }
         struct Response: Decodable { struct Choice: Decodable { let message: Message }; let choices: [Choice] }
-        guard !meeting.segments.isEmpty else { throw AppError.message("There’s no transcript to analyze yet.") }
+        guard !meeting.keptSegments.isEmpty else { throw AppError.message("There’s no transcript to analyze yet.") }
         var request = request("chat/completions", key: key)
         request.httpMethod = "POST"
         request.timeoutInterval = 300

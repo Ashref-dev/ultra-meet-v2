@@ -5,7 +5,7 @@
 Native macOS, Apple Silicon, macOS 15 or later. Menu-bar agent app.
 
 ## Stack
-SwiftUI and AppKit (NSStatusItem, NSPopover, NSMenu), Core Audio process tap and AVFoundation recording, local MLX speech models (Qwen3-ASR, Whisper, Cohere Transcribe, Parakeet, Granite Speech, Voxtral) in an isolated Python runtime, OpenRouter for on-demand analysis.
+SwiftUI and AppKit (NSStatusItem, NSPopover, NSMenu), Core Audio recording (process tap for Mac audio, the chosen microphone), lossless FLAC storage, local MLX speech models (Qwen3-ASR, Whisper, Cohere Transcribe, Parakeet, Granite Speech, Voxtral) in an isolated Python runtime, OpenRouter for on-demand analysis.
 
 ## Users
 Professionals who meet often with colleagues, sometimes at short notice and in more than one language (for example English and Arabic), and need reliable notes and action items afterwards.

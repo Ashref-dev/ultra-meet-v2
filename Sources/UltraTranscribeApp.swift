@@ -54,6 +54,7 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, UNUserNotifica
             Notifier.post(id: "update-\(version)", title: "Ultra Transcribe \(version) is available", body: "Open Settings → Credits to install it.", info: ["update": version])
         }
         state.updater.scheduleChecks { [weak state] in state?.preferences.checkForUpdates ?? false }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 10) { [weak state] in state?.compactLibrary() }
         if launchedAtLogin { return }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
             guard let self else { return }

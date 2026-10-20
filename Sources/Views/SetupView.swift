@@ -227,7 +227,7 @@ struct SetupView: View {
     }
     /// Starting a system audio capture for a moment is what makes macOS ask for permission.
     func requestMacAudio() {
-        let tap = SystemAudioTap()
+        let tap = AudioCapture(.system)
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("ultra-transcribe-permission-\(UUID().uuidString).caf")
         do {
             try tap.start(url: url)
@@ -243,22 +243,24 @@ struct SetupView: View {
     func open(_ address: String) { if let url = URL(string: address) { NSWorkspace.shared.open(url) } }
 }
 
-/// A microphone level check for setup: meters the input into a temporary file that is deleted right away.
+/// A microphone level check for setup: records the microphone Ultra Transcribe will use into a temporary file that
+/// is deleted right away.
 @MainActor
 final class MicrophoneCheck: ObservableObject {
     let meter = LevelMeter()
     @Published var failure: String?
-    private var recorder: AVAudioRecorder?
+    private var capture: AudioCapture?
+    private var level: Float = 0
     private var timer: Timer?
+    private let url = FileManager.default.temporaryDirectory.appendingPathComponent("ultra-transcribe-mic-check.caf")
 
-    func start() {
-        guard recorder == nil else { return }
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("ultra-transcribe-mic-check.wav")
+    func start(microphone: String? = nil) {
+        guard capture == nil else { return }
+        let input = AudioCapture(.microphone(preferred: microphone))
+        input.onLevel = { [weak self] value in Task { @MainActor in self?.level = value } }
         do {
-            let input = try AVAudioRecorder(url: url, settings: [AVFormatIDKey: kAudioFormatLinearPCM, AVSampleRateKey: 16000, AVNumberOfChannelsKey: 1])
-            input.isMeteringEnabled = true
-            guard input.record() else { throw AppError.message("The microphone could not start. Check your input in System Settings → Sound.") }
-            recorder = input
+            try input.start(url: url)
+            capture = input
             failure = nil
         } catch {
             failure = error.localizedDescription
@@ -266,9 +268,8 @@ final class MicrophoneCheck: ObservableObject {
         }
         timer = Timer(timeInterval: 0.08, repeats: true) { [weak self] _ in
             Task { @MainActor in
-                guard let self, let recorder = self.recorder else { return }
-                recorder.updateMeters()
-                self.meter.push(.init(you: LevelMeter.normalized(decibels: recorder.averagePower(forChannel: 0)), colleagues: 0), interval: 0.08)
+                guard let self else { return }
+                self.meter.push(.init(you: LevelMeter.normalized(decibels: 20 * log10(max(self.level, 0.000_001))), colleagues: 0), interval: 0.08)
             }
         }
         if let timer { RunLoop.main.add(timer, forMode: .common) }
@@ -277,9 +278,9 @@ final class MicrophoneCheck: ObservableObject {
     func stop() {
         timer?.invalidate()
         timer = nil
-        recorder?.stop()
-        recorder?.deleteRecording()
-        recorder = nil
+        capture?.stop()
+        capture = nil
+        try? FileManager.default.removeItem(at: url)
         meter.reset()
     }
 }

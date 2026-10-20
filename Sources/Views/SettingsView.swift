@@ -188,27 +188,39 @@ struct RecordingSettings: View {
         default: return "Asks on first recording"
         }
     }
-    var micMode: String {
-        switch AVCaptureDevice.activeMicrophoneMode {
-        case .voiceIsolation: return "Voice Isolation"
-        case .wideSpectrum: return "Wide Spectrum"
-        default: return "Standard"
-        }
+    @State private var inputs: [AudioDevice] = []
+    var automatic: AudioDevice? { AudioDevice.microphone(preferred: nil, among: inputs, defaultID: AudioDevice.defaultDevice(input: true)) }
+    var chosen: AudioDevice? { inputs.first { $0.uid == state.preferences.microphone } }
+    var microphoneTitle: String {
+        if let chosen { return chosen.name }
+        if state.preferences.microphone != nil { return "Not connected" }
+        return automatic.map { "Automatic · \($0.name)" } ?? "No microphone"
     }
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             SettingsSection(title: "Record by default", footer: "Separate tracks let transcripts and AI notes tell who said what. Headphones keep colleagues out of your microphone.") {
                 SourcePicker(state: state).padding(12)
             }
-            SettingsSection(title: "Microphone", footer: "Voice Isolation removes background voices and noise. macOS lets you switch it while a recording is running.") {
-                SettingsRow(title: "Input", detail: AVCaptureDevice.default(for: .audio)?.localizedName ?? "No input device") {
-                    Button("Sound…") { openURL("x-apple.systempreferences:com.apple.Sound-Settings.extension") }.buttonStyle(ControlStyle(compact: true))
-                }
-                RowDivider()
-                SettingsRow(title: "Mic mode", detail: micMode) {
-                    Button("Change…") { AVCaptureDevice.showSystemUserInterface(.microphoneModes) }.buttonStyle(ControlStyle(compact: true))
+            SettingsSection(title: "Microphone", footer: "Automatic never opens a Bluetooth headset’s microphone, which would switch it to muffled call quality. Your Mac’s microphone records you instead.") {
+                SettingsRow(title: "Records You", detail: chosen?.isBluetooth == true ? "Bluetooth: your headset plays in call quality while you record." : nil) {
+                    Menu {
+                        Button { state.preferences.microphone = nil } label: { choice(automatic.map { "Automatic (\($0.name))" } ?? "Automatic", on: state.preferences.microphone == nil) }
+                        Divider()
+                        ForEach(inputs) { device in
+                            Button { state.preferences.microphone = device.uid } label: { choice(device.isBluetooth ? "\(device.name) (call quality)" : device.name, on: state.preferences.microphone == device.uid) }
+                        }
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "mic").font(.system(size: 10))
+                            Text(microphoneTitle)
+                            Image(systemName: "chevron.down").font(.system(size: 8, weight: .bold)).opacity(0.6)
+                        }
+                    }
+                    .menuStyle(.button).buttonStyle(ControlStyle(compact: true)).menuIndicator(.hidden).fixedSize()
+                    .help("Microphone that records you")
                 }
             }
+            .onAppear { inputs = AudioDevice.inputs() }
             SettingsSection(title: "Permissions") {
                 SettingsRow(title: "Microphone", detail: microphonePermission) {
                     Button("Open…") { openURL("x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone") }.buttonStyle(ControlStyle(compact: true))
@@ -220,6 +232,10 @@ struct RecordingSettings: View {
             }
         }
     }
+}
+
+@ViewBuilder private func choice(_ title: String, on: Bool) -> some View {
+    if on { Label(title, systemImage: "checkmark") } else { Text(title) }
 }
 
 struct TranscriptionSettings: View {

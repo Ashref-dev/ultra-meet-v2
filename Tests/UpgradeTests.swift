@@ -1,4 +1,5 @@
 import AVFoundation
+import CoreAudio
 import Foundation
 import XCTest
 @testable import UltraTranscribe
@@ -179,7 +180,7 @@ final class UpgradeTests: XCTestCase {
         XCTAssertTrue(state.isProtected(id))
     }
 
-    func testPlaybackLiftsQuietTracksButNeverTurnsLoudOnesDown() throws {
+    func testPlaybackBringsEveryTrackToTheSameLevel() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
@@ -195,6 +196,62 @@ final class UpgradeTests: XCTestCase {
         }
         XCTAssertEqual(AudioPlayback.comfortableGain(try tone(rms: -40)), 22, accuracy: 0.5)
         XCTAssertEqual(AudioPlayback.comfortableGain(try tone(rms: -50)), 24, accuracy: 0.01, "Boost is capped")
-        XCTAssertEqual(AudioPlayback.comfortableGain(try tone(rms: -10)), 0, "Loud tracks are left alone")
+        XCTAssertEqual(AudioPlayback.comfortableGain(try tone(rms: -10)), -8, accuracy: 0.5, "A hot track is turned down to the same level")
+    }
+
+    func testAutomaticMicrophoneNeverOpensABluetoothHeadset() {
+        let builtIn = AudioDevice(id: 1, uid: "built-in", name: "MacBook Pro Microphone", transport: kAudioDeviceTransportTypeBuiltIn)
+        let airPods = AudioDevice(id: 2, uid: "airpods", name: "AirPods Pro", transport: kAudioDeviceTransportTypeBluetooth)
+        let usb = AudioDevice(id: 3, uid: "usb", name: "USB Microphone", transport: kAudioDeviceTransportTypeUSB)
+        let inputs = [builtIn, airPods, usb]
+        XCTAssertEqual(AudioDevice.microphone(preferred: nil, among: inputs, defaultID: 2), builtIn, "a Bluetooth default input is replaced by the built-in microphone")
+        XCTAssertEqual(AudioDevice.microphone(preferred: nil, among: inputs, defaultID: 3), usb, "other default inputs are used as they are")
+        XCTAssertEqual(AudioDevice.microphone(preferred: "airpods", among: inputs, defaultID: 1), airPods, "a microphone chosen in Settings wins")
+        XCTAssertEqual(AudioDevice.microphone(preferred: "gone", among: inputs, defaultID: 2), builtIn, "a disconnected choice falls back to automatic")
+        XCTAssertEqual(AudioDevice.microphone(preferred: nil, among: [airPods], defaultID: 2), airPods, "a headset is used when it is the only microphone")
+        XCTAssertNil(AudioDevice.microphone(preferred: nil, among: [], defaultID: nil))
+    }
+
+    func testArchiveStoresTracksAsVerifiedFLAC() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let format = try XCTUnwrap(AVAudioFormat(standardFormatWithSampleRate: 48000, channels: 1))
+        let buffer = try XCTUnwrap(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 48000 * 2))
+        buffer.frameLength = buffer.frameCapacity
+        let samples = try XCTUnwrap(buffer.floatChannelData?[0])
+        for index in 0..<Int(buffer.frameLength) { samples[index] = 0.3 * sin(Float(index) * 2 * .pi * 330 / 48000) + (index % 977 == 0 ? 0.9 : 0) }
+        let integer: [String: Any] = [AVFormatIDKey: kAudioFormatLinearPCM, AVSampleRateKey: 48000, AVNumberOfChannelsKey: 1, AVLinearPCMBitDepthKey: 16, AVLinearPCMIsFloatKey: false]
+        do {
+            try AVAudioFile(forWriting: folder.appendingPathComponent("microphone.caf"), settings: integer, commonFormat: .pcmFormatFloat32, interleaved: false).write(from: buffer)
+            try AVAudioFile(forWriting: folder.appendingPathComponent("system.caf"), settings: format.settings).write(from: buffer) // 32-bit float, as before 0.8
+        }
+        let before = try AVAudioFile(forReading: folder.appendingPathComponent("microphone.caf"))
+        let original = try XCTUnwrap(AVAudioPCMBuffer(pcmFormat: before.processingFormat, frameCapacity: AVAudioFrameCount(before.length)))
+        try before.read(into: original)
+
+        XCTAssertGreaterThan(try AudioArchive.compact(folder: folder), 0)
+        let names = try FileManager.default.contentsOfDirectory(atPath: folder.path).sorted()
+        XCTAssertEqual(names, ["microphone.flac", "system.flac"], "originals are replaced only by their verified copies")
+        let microphone = try AVAudioFile(forReading: folder.appendingPathComponent("microphone.flac"))
+        XCTAssertEqual(microphone.length, before.length)
+        let copy = try XCTUnwrap(AVAudioPCMBuffer(pcmFormat: microphone.processingFormat, frameCapacity: AVAudioFrameCount(microphone.length)))
+        var position = 0
+        while microphone.framePosition < microphone.length {
+            try microphone.read(into: copy)
+            for index in 0..<Int(copy.frameLength) where copy.floatChannelData?[0][index] != original.floatChannelData?[0][position + index] {
+                return XCTFail("16-bit audio must survive exactly; sample \(position + index) differs")
+            }
+            position += Int(copy.frameLength)
+        }
+        XCTAssertEqual(position, Int(before.length))
+        XCTAssertEqual(try AudioArchive.compact(folder: folder), 0, "compressed meetings are left alone")
+    }
+
+    func testPreferencesRememberTheChosenMicrophone() throws {
+        XCTAssertNil(try JSONDecoder().decode(Preferences.self, from: Data("{}".utf8)).microphone, "older settings pick the microphone automatically")
+        var preferences = Preferences()
+        preferences.microphone = "usb"
+        XCTAssertEqual(try JSONDecoder().decode(Preferences.self, from: JSONEncoder().encode(preferences)).microphone, "usb")
     }
 }

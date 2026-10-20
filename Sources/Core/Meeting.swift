@@ -131,6 +131,10 @@ struct Meeting: Codable, Identifiable {
     var analysisTemplate: String?
     var analysisModel: String?
     var analyzedAt: Date?
+    /// The part of the recording that counts, in seconds; `nil` is the start or the end. Lines outside it are left out
+    /// of the transcript, AI analysis, export and copy, but audio and lines are kept, so a trim can always be undone.
+    var keepFrom: Double?
+    var keepUntil: Double?
 
     static func automaticTitle(_ date: Date = Date()) -> String {
         "Meeting · " + date.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated).hour().minute())
@@ -148,34 +152,63 @@ struct Meeting: Codable, Identifiable {
         if replacement != segments { notesStale = !summary.isEmpty }
         segments = replacement
     }
-    var transcript: String { segments.map { "[\(Self.timestamp($0.start))] \($0.speaker): \($0.text)" }.joined(separator: "\n") }
+    var isTrimmed: Bool { keepFrom != nil || keepUntil != nil }
+    /// The whole recording: its measured length, or the end of the last line when that is later.
+    var length: Double { max(duration, segments.map(\.end).max() ?? 0) }
+    /// The kept part, always inside the recording and never reversed, even when saved bounds are out of range.
+    var keptRange: ClosedRange<Double> {
+        let end = length
+        let start = min(max(0, keepFrom ?? 0), end)
+        return start...max(start, min(keepUntil ?? end, end))
+    }
+    /// Lines that start inside the kept part. A line that starts exactly where the kept part ends is left out, so
+    /// "End Meeting Here" never keeps the line right after it.
+    var keptSegments: [TranscriptSegment] {
+        guard isTrimmed else { return segments }
+        let range = keptRange
+        return segments.filter { $0.start >= range.lowerBound && (keepUntil == nil || $0.start < range.upperBound) }
+    }
+    var keptDuration: Double { isTrimmed ? keptRange.upperBound - keptRange.lowerBound : duration }
+    /// Keeps only `from` to `until`. `nil`, or a bound within a second of the start or the end, means the start or the
+    /// end; a trim that would keep nothing is ignored. Like any transcript change, it puts AI notes out of date.
+    mutating func trim(from: Double?, until: Double?) {
+        let end = length
+        let start = from.flatMap { $0 > 1 ? $0 : nil }
+        let stop = until.flatMap { $0 < end - 1 ? $0 : nil }
+        guard (stop ?? end) > (start ?? 0) else { return }
+        if start != keepFrom || stop != keepUntil { notesStale = !summary.isEmpty }
+        keepFrom = start
+        keepUntil = stop
+    }
+    var transcript: String { keptSegments.map { "[\(Self.timestamp($0.start))] \($0.speaker): \($0.text)" }.joined(separator: "\n") }
     /// Seconds spoken by each side, measured from the transcript so it matches what was said, not room noise.
     var talkTime: (you: Double, colleagues: Double) {
-        segments.reduce(into: (you: 0.0, colleagues: 0.0)) { total, segment in
+        keptSegments.reduce(into: (you: 0.0, colleagues: 0.0)) { total, segment in
             if segment.source == "system" { total.colleagues += segment.duration } else { total.you += segment.duration }
         }
     }
     var languages: [String] {
-        segments.compactMap(\.language).reduce(into: [String]()) { if !$0.contains($1) { $0.append($1) } }
+        keptSegments.compactMap(\.language).reduce(into: [String]()) { if !$0.contains($1) { $0.append($1) } }
     }
     /// What AI analysis reads: who is who, how much each side spoke, then the transcript with unsure lines marked.
     var analysisInput: String {
+        let kept = keptSegments
         let time = talkTime
         let total = max(1, time.you + time.colleagues)
-        var header = ["Recorded \(createdAt.formatted(date: .complete, time: .shortened)), \(Self.timestamp(duration)) long."]
-        if Set(segments.map(\.source)).count > 1 || segments.contains(where: { $0.source == "system" }) {
+        var header = ["Recorded \(createdAt.formatted(date: .complete, time: .shortened)), \(Self.timestamp(keptDuration)) long."]
+        if Set(kept.map(\.source)).count > 1 || kept.contains(where: { $0.source == "system" }) {
             header.append("Talk time: You \(Self.timestamp(time.you)) (\(Int((time.you / total * 100).rounded()))%), Colleagues \(Self.timestamp(time.colleagues)) (\(Int((time.colleagues / total * 100).rounded()))%).")
         }
         if !languages.isEmpty { header.append("Languages heard: \(languages.joined(separator: ", ")).") }
         if !notes.isEmpty { header.append("Notes the recorder typed during the meeting:\n\(notes)") }
-        let lines = segments.map { "[\(Self.timestamp($0.start))] \($0.speaker): \($0.text)\($0.isUncertain ? " [unclear]" : "")" }
+        let lines = kept.map { "[\(Self.timestamp($0.start))] \($0.speaker): \($0.text)\($0.isUncertain ? " [unclear]" : "")" }
         return header.joined(separator: "\n") + "\n\nTranscript:\n" + lines.joined(separator: "\n")
     }
     var shareableNotes: String {
         (notesStale == true ? "> These notes belong to an earlier transcription.\n\n" : "") + summary
     }
     var markdown: String {
-        var sections = ["# \(title)", "\(createdAt.formatted(date: .complete, time: .shortened)) · \(Self.timestamp(duration))"]
+        var sections = ["# \(title)", "\(createdAt.formatted(date: .complete, time: .shortened)) · \(Self.timestamp(keptDuration))"]
         if !summary.isEmpty { sections += ["## Meeting notes", shareableNotes] }
         if !notes.isEmpty { sections += ["## My notes", notes] }
         sections += ["## Transcript", transcript]
@@ -219,6 +252,8 @@ struct Preferences: Codable, Equatable {
     var notifyWhenReady = true
     /// Sends the transcript to OpenRouter as soon as a meeting is transcribed. Off unless the user turns it on.
     var analyzeAfterTranscription = false
+    /// The microphone that records You, as a Core Audio device UID; nil picks one automatically (see `AudioDevice.microphone`).
+    var microphone: String?
     var checkForUpdates = true
     /// Becomes true once the first-run setup is finished or skipped.
     var setupDone = false
@@ -255,6 +290,7 @@ struct Preferences: Codable, Equatable {
         globalShortcut = (try? values.decodeIfPresent(Bool.self, forKey: .globalShortcut)) ?? defaults.globalShortcut
         notifyWhenReady = (try? values.decodeIfPresent(Bool.self, forKey: .notifyWhenReady)) ?? defaults.notifyWhenReady
         analyzeAfterTranscription = (try? values.decodeIfPresent(Bool.self, forKey: .analyzeAfterTranscription)) ?? defaults.analyzeAfterTranscription
+        microphone = try? values.decodeIfPresent(String.self, forKey: .microphone)
         checkForUpdates = (try? values.decodeIfPresent(Bool.self, forKey: .checkForUpdates)) ?? defaults.checkForUpdates
         setupDone = (try? values.decodeIfPresent(Bool.self, forKey: .setupDone)) ?? defaults.setupDone
     }

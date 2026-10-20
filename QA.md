@@ -2,6 +2,15 @@
 
 What was verified for the current release, and how. Update this file with every release; say plainly what was not verified.
 
+## Unreleased
+
+Environment: Apple Silicon, 24 GB memory, macOS 27. `swift test`: 56 pass (new: automatic microphone never picks a Bluetooth headset, FLAC archive keeps 16-bit audio sample-exact and replaces originals only after verification, chosen-microphone preference, trim model and decoding, playback leveling down). Release build and strict signature verification passed.
+
+- Why call audio sounded muffled: measured on three real meetings. Tracks recorded during calls had nothing above 8 to 12 kHz and the microphone track had hundreds of stretches of exact digital silence, the signature of a Bluetooth headset in call mode. The microphone was opened with `AVAudioRecorder` on the default input, which is the headset when one is connected.
+- FLAC archive: a 3-minute real meeting went from 54 MB to 4.4 MB in 0.6 s; a 70-minute meeting projects from 1.1 GB to about 125 MB. The worker transcribed the original and the compressed copy of the same meeting into identical output: 30 lines, 200 words, no line different.
+- The worker reads the new 16-bit little-endian CAF while it is still being written (live transcription), checked with an unclosed file.
+- Not seen on screen or heard: recording through the new Core Audio capture (needs the user's microphone and permission), whether the Bluetooth headset now stays in full quality, following a device switch mid-meeting, the microphone menu, the panel opening active, trim handles and menu items, playback leveling. These are built and unit-tested only.
+
 ## 0.7.1
 
 Environment: Apple Silicon, 24 GB memory, macOS 27, full Xcode. `swift test`: 49 pass (new checks: automatic analysis is off by default; model names in meeting headers). `basedpyright`: 0 errors. `ruff`: clean. Release build and strict signature verification passed.

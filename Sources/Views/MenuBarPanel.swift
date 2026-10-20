@@ -55,10 +55,6 @@ struct MenuBarPanel: View {
                 }
             }
             MoreMenu(label: "More options") {
-                if recording {
-                    Button("Microphone Mode…") { AVCaptureDevice.showSystemUserInterface(.microphoneModes) }
-                    Divider()
-                }
                 Button("Open Meeting Library") { state.showMeeting(nil) }
                 Button("Import Audio…") { state.importAudio() }.disabled(!state.canStart)
                 Divider()

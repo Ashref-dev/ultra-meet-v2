@@ -64,7 +64,6 @@ final class StatusBarController: NSObject, NSWindowDelegate {
         visibility.shown = true
         place()
         panel.alphaValue = 0
-        NSApp.activate()
         panel.makeKeyAndOrderFront(nil)
         panel.makeFirstResponder(nil)
         NSAnimationContext.runAnimationGroup { context in
@@ -219,10 +218,14 @@ final class StatusBarController: NSObject, NSWindowDelegate {
 }
 
 /// Borderless, transparent window for the menu-bar panel; the SwiftUI content draws the glass and its shape.
+/// Non-activating, like Spotlight: it becomes the key window (active glass, orange controls, typing works) the moment
+/// it opens, without activating the app. Asking macOS to activate the app can be declined while another app is in
+/// front, which left the panel looking inactive until the first click, and the call app keeps focus this way.
 final class GlassPanel: NSPanel {
     var onEscape: (() -> Void)?
     init() {
-        super.init(contentRect: .zero, styleMask: [.borderless], backing: .buffered, defer: true)
+        super.init(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: true)
+        becomesKeyOnlyIfNeeded = false
         isOpaque = false
         backgroundColor = .clear
         hasShadow = true

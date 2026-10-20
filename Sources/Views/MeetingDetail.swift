@@ -50,6 +50,7 @@ struct MeetingDetail: View {
         .onChange(of: tab) { _, _ in copied = false }
         .onChange(of: state.activeID) { _, id in if id != nil { playback.stop() } }
         .onChange(of: meeting.audioDeleted) { _, deleted in if deleted { playback.stop() } }
+        .onChange(of: meeting.keptRange) { _, _ in playback.limit(from: playRange.from, until: playRange.until) }
         .onDisappear { playback.stop() }
         .background(KeyMonitor { key in
             // Space plays or pauses a finished meeting's audio; it never starts or stops a recording.
@@ -104,7 +105,7 @@ struct MeetingDetail: View {
             EditableTitle(title: meeting.title, size: 26) { state.rename(meeting.id, to: $0) }
                 .padding(.top, 8)
             HStack(spacing: 12) {
-                MonoLabel(([meeting.createdAt.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated).year().hour().minute()), Meeting.timestamp(isActive ? state.elapsed : meeting.duration)]
+                MonoLabel(([meeting.createdAt.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated).year().hour().minute()), Meeting.timestamp(isActive ? state.elapsed : meeting.keptDuration)]
                     + (meeting.segments.isEmpty || isActive ? [] : [meeting.model.fullName])).joined(separator: " · "))
                     .help(meeting.segments.isEmpty || isActive ? "" : "Transcribed with \(meeting.model.fullName)")
                 Spacer()
@@ -119,12 +120,12 @@ struct MeetingDetail: View {
         .padding(.horizontal, 24).padding(.top, 24).padding(.bottom, 16)
     }
     var speakers: [String] {
-        let sources = Set(meeting.segments.map(\.source))
+        let sources = Set(meeting.keptSegments.map(\.source))
         return ["microphone", "system", "imported"].filter(sources.contains)
     }
     var actions: some View {
         MoreMenu(label: "More actions") {
-            Button("Analyze with AI") { tab = "AI notes"; state.analyze(meeting.id) }.disabled(meeting.segments.isEmpty || state.analyzingID != nil)
+            Button("Analyze with AI") { tab = "AI notes"; state.analyze(meeting.id) }.disabled(meeting.keptSegments.isEmpty || state.analyzingID != nil)
             Button("Transcribe Again") { state.transcribe(meeting.id) }.disabled(!canSeek || isTranscribing || isLive)
             Divider()
             Group {
@@ -181,8 +182,21 @@ struct MeetingDetail: View {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 22) {
                     VStack(alignment: .leading, spacing: 8) {
-                        PlayheadMap(segments: meeting.segments, duration: meeting.duration, clock: playback.clock, showsPlayhead: playback.duration > 0, seek: canSeek ? { play(audioFiles, at: $0) } : nil)
+                        PlayheadMap(segments: meeting.segments, duration: meeting.duration, clock: playback.clock, showsPlayhead: playback.duration > 0, seek: canSeek ? { play(audioFiles, at: $0) } : nil,
+                                    kept: meeting.isTrimmed ? meeting.keptRange : nil, trim: trimAction)
                         TalkTimeLabels(meeting: meeting)
+                        if meeting.isTrimmed {
+                            HStack(spacing: 6) {
+                                Image(systemName: "scissors").font(.system(size: 10.5, weight: .medium))
+                                Text("Trimmed to \(Meeting.timestamp(meeting.keptRange.lowerBound)) to \(Meeting.timestamp(meeting.keptRange.upperBound))")
+                                if canTrim {
+                                    Button("Restore") { state.trim(meeting.id, from: nil, until: nil) }
+                                        .buttonStyle(.plain).foregroundStyle(Theme.orange)
+                                }
+                            }
+                            .font(.system(size: 11.5)).foregroundStyle(Theme.secondary)
+                            .help("Only this part is shown, played, analyzed, exported and copied. Nothing is deleted.")
+                        }
                     }
                     .frame(maxWidth: Theme.readingWidth + 84, alignment: .leading)
                     if let audioNotice, !isActive {
@@ -203,8 +217,9 @@ struct MeetingDetail: View {
                             .frame(maxWidth: Theme.readingWidth + 84)
                             .transition(.opacity)
                     }
-                    ForEach(SpeakerBlock.group(meeting.segments)) { block in
-                        SpeakerBlockView(block: block, playingID: playingLineID, redoingID: state.redoingLineID, showLanguage: meeting.languages.count > 1, actions: lineActions)
+                    let showLanguage = meeting.languages.count > 1
+                    ForEach(SpeakerBlock.group(meeting.keptSegments)) { block in
+                        SpeakerBlockView(block: block, playingID: playingLineID, redoingID: state.redoingLineID, showLanguage: showLanguage, actions: lineActions)
                     }
                 }
                 .padding(.horizontal, 24).padding(.vertical, 24)
@@ -265,6 +280,11 @@ struct MeetingDetail: View {
         .padding(24).frame(maxWidth: .infinity, maxHeight: .infinity)
     }
     var canSeek: Bool { !meeting.audioDeleted && !isActive && !audioFiles.isEmpty }
+    /// Finished meetings only, with or without audio: the trim is a window on the transcript.
+    var canTrim: Bool { !isActive && !isLive && !isTranscribing && !isAnalyzing }
+    var trimAction: ((Double?, Double?) -> Void)? {
+        canTrim ? { [state, id = meeting.id] in state.trim(id, from: $0, until: $1) } : nil
+    }
     /// Why the recording can't be played, so a click on a line never fails silently.
     var audioNotice: String? {
         if meeting.audioDeleted { return "This meeting’s audio was deleted, by you or by the audio retention setting, so it can’t be played or transcribed again. The transcript and notes are kept." }
@@ -279,7 +299,10 @@ struct MeetingDetail: View {
             canDetect: state.speechModel(for: meeting).languageMode == .several,
             seek: { play(audioFiles, at: $0.start) },
             redo: { state.retranscribe(meeting.id, line: $0, as: $1) },
-            edit: { state.editLine(meeting.id, line: $0.id, text: $1) })
+            edit: { state.editLine(meeting.id, line: $0.id, text: $1) },
+            trim: trimAction,
+            keepFrom: meeting.keepFrom,
+            keepUntil: meeting.keepUntil)
     }
     /// Languages a line can be transcribed again as: the chosen ones first, none for models that detect by themselves.
     var redoLanguages: [String] {
@@ -290,7 +313,7 @@ struct MeetingDetail: View {
     }
     /// The line being heard at `position`, highlighted and kept in view while the meeting plays.
     func playingLine(at position: Double) -> UUID? {
-        meeting.segments.last { playback.sources.contains($0.source) && $0.start <= position + 0.15 && position < $0.end + 0.6 }?.id
+        meeting.keptSegments.last { playback.sources.contains($0.source) && $0.start <= position + 0.15 && position < $0.end + 0.6 }?.id
     }
 
     // MARK: Audio
@@ -309,7 +332,15 @@ struct MeetingDetail: View {
         default: return "Recording"
         }
     }
-    func play(_ urls: [URL], at seconds: Double = 0) {
+    func play(_ listed: [URL], at seconds: Double = 0) {
+        // Tracks are compressed to FLAC after transcription, so a listing made before that names files that are gone.
+        var urls = listed
+        if urls.contains(where: { !FileManager.default.fileExists(atPath: $0.path) }) {
+            let fresh = listAudio()
+            listedAudio = fresh
+            let names = Set(listed.map { $0.deletingPathExtension().lastPathComponent })
+            urls = fresh.filter { names.contains($0.deletingPathExtension().lastPathComponent) }
+        }
         guard !urls.isEmpty else {
             if let audioNotice { state.error = audioNotice }
             return
@@ -319,12 +350,16 @@ struct MeetingDetail: View {
             if !playback.playing { playback.togglePause() }
             return
         }
-        do { try playback.play(urls, at: seconds) }
+        do { try playback.play(urls, at: seconds, from: playRange.from, until: playRange.until) }
         catch { state.error = "This recording could not be played: \(error.localizedDescription)" }
+    }
+    /// The kept part of a trimmed meeting. An untrimmed end stays `nil`, so playback runs to the end of the audio.
+    var playRange: (from: Double, until: Double?) {
+        (meeting.keptRange.lowerBound, meeting.keepUntil == nil ? nil : meeting.keptRange.upperBound)
     }
     var copyText: String {
         switch tab {
-        case "Transcript": return meeting.segments.isEmpty ? "" : meeting.transcript
+        case "Transcript": return meeting.keptSegments.isEmpty ? "" : meeting.transcript
         case "My notes": return meeting.notes
         default: return meeting.summary.isEmpty ? "" : meeting.shareableNotes
         }
@@ -343,8 +378,10 @@ private struct PlayheadMap: View {
     @ObservedObject var clock: AudioPlayback.Clock
     let showsPlayhead: Bool
     let seek: ((Double) -> Void)?
+    let kept: ClosedRange<Double>?
+    let trim: ((Double?, Double?) -> Void)?
     var body: some View {
-        ConversationMap(segments: segments, duration: duration, position: showsPlayhead ? clock.position : nil, seek: seek)
+        ConversationMap(segments: segments, duration: duration, position: showsPlayhead ? clock.position : nil, seek: seek, kept: kept, trim: trim)
     }
 }
 
@@ -368,7 +405,7 @@ private struct PlayerBar: View {
             MonoLabel(playback.sources.map { $0 == "microphone" ? "You" : $0 == "system" ? "Colleagues" : "Recording" }.joined(separator: " + "))
                 .lineLimit(1)
             Text(Meeting.timestamp(scrub ?? clock.position)).font(Theme.mono).monospacedDigit()
-            Slider(value: Binding(get: { scrub ?? clock.position }, set: { scrub = $0 }), in: 0...max(1, playback.duration)) { editing in
+            Slider(value: Binding(get: { scrub ?? clock.position }, set: { scrub = $0 }), in: playback.start...max(playback.start + 1, playback.duration)) { editing in
                 guard !editing, let target = scrub else { return }
                 playback.seek(target)
                 scrub = nil
@@ -429,7 +466,7 @@ struct AnalysisView: View {
                             HStack(spacing: 8) {
                                 TemplatePicker(state: state)
                                 Button { state.analyze(meeting.id) } label: { Label("Re-analyze", systemImage: "arrow.clockwise") }
-                                    .buttonStyle(ControlStyle(compact: true)).disabled(state.analyzingID != nil || meeting.segments.isEmpty)
+                                    .buttonStyle(ControlStyle(compact: true)).disabled(state.analyzingID != nil || meeting.keptSegments.isEmpty)
                             }
                         }
                     }
@@ -447,8 +484,8 @@ struct AnalysisView: View {
     var analyzeButton: some View {
         Button { state.analyze(meeting.id) } label: { Label("Analyze with AI", systemImage: "sparkles") }
             .buttonStyle(ControlStyle(kind: .primary))
-            .disabled(meeting.segments.isEmpty || state.analyzingID != nil)
-            .help(meeting.segments.isEmpty ? "Transcribe the meeting first" : "Analyze with \(state.preferences.openRouterModel)")
+            .disabled(meeting.keptSegments.isEmpty || state.analyzingID != nil)
+            .help(meeting.segments.isEmpty ? "Transcribe the meeting first" : meeting.keptSegments.isEmpty ? "No lines are left after trimming" : "Analyze with \(state.preferences.openRouterModel)")
     }
     func failureView(_ message: String) -> some View {
         InlineHint(symbol: "exclamationmark.circle.fill", text: message, action: message.contains("Settings") ? ("Open Settings", { state.showSettings(.analysis) }) : nil)

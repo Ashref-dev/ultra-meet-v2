@@ -5,7 +5,7 @@
 **Meeting notes for the AI-native era.** Ultra Transcribe is a macOS menu-bar app for teams that meet often and need clear notes fast. Start a meeting in one click, get an accurate transcript that shows what you said and what your colleagues said, then turn it into a summary, decisions and action items when you need them.
 
 - **One click from the menu bar.** Meetings start instantly and name themselves. No window to manage, no Dock icon.
-- **Clear speaker labels.** Your microphone is recorded as **You** and your Mac's call audio as **Colleagues**, on separate tracks.
+- **Clear speaker labels.** Your microphone is recorded as **You** and your Mac's call audio as **Colleagues**, on separate tracks. Recording never changes what you hear: a Bluetooth headset's microphone is left closed so it keeps playing in full quality.
 - **Transcribed on your Mac, while you talk.** Qwen3-ASR runs locally on Apple Silicon by default, with Whisper, Cohere, Parakeet, Granite and Voxtral one download away, and the transcript is ready seconds after you stop. Quiet voices and whispers are picked up. Audio is never uploaded.
 - **Multilingual by design.** People can switch languages sentence by sentence; you choose which languages your meetings use.
 - **AI notes on demand.** Click **Analyze with AI** to send the transcript text to the OpenRouter model you choose, with templates for different kinds of meetings.
@@ -27,6 +27,7 @@ Updates: Settings → Credits checks for new releases and installs them in place
 - **Left-click** the menu-bar icon for the recorder: choose You and Colleagues, then **Start recording**. While recording you see the meeting name (click to rename), talk time per side, the latest transcript lines, a live waveform and a note field. A warning appears if your microphone is silent or no call audio plays on this Mac.
 - **Right-click** the icon for Start, Pause, Resume, Stop, Meeting Library, Settings, updates and Quit. **⌃⌥⌘R** starts or stops recording from any app.
 - **Stop** saves the audio, finishes the transcript and opens the meeting. A conversation map shows when each side spoke; click it or any timestamp to play both sides together, at up to 2×, with the current line highlighted. Lines are grouped into speaker turns, labeled by language in mixed-language meetings, and right-to-left languages align correctly. Click a line to play it, double-click to fix a typo. Unsure lines are underlined; right-click a line to transcribe it again as another language. Corrections offer to add new names to Names and terms.
+- **Trim a meeting:** drag the orange handles on the conversation map, or right-click a line and choose Start Meeting Here or End Meeting Here. The cut part is left out of the transcript, playback, AI notes, export and copy. Nothing is deleted; Restore brings it back.
 - **Trash a meeting:** swipe left on its library row to reveal the round Trash button, then click and confirm. The meeting and its audio move to the Finder Trash for recovery. Recording and processing meetings cannot be trashed.
 - **AI notes → Analyze with AI** produces a summary, discussion, decisions, action items for you and for your colleagues, and open questions. The model also gets talk time per side, the languages heard, your typed notes and which lines were unclear. Automatically named meetings get a descriptive title.
 
@@ -83,7 +84,7 @@ On a 12-minute English and Saudi Arabic meeting, limiting detection to English a
 
 ## Privacy
 
-- Audio and transcripts stay in `~/Library/Application Support/UltraTranscribe`.
+- Audio and transcripts stay in `~/Library/Application Support/UltraTranscribe`. Transcribed meetings keep their audio as lossless FLAC, about 110 MB per hour for both tracks.
 - Nothing is sent anywhere unless you click Analyze with AI, validate a key, open the model catalog, download a model or install an update. The daily update check only reads the public release list on GitHub, and can be turned off in Settings → Credits.
 - Your OpenRouter key is stored in the macOS Keychain.
 - Audio of transcribed meetings is deleted after the retention period you choose; transcripts and notes are kept.

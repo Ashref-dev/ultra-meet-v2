@@ -49,16 +49,6 @@ final class ReviewRegressionTests: XCTestCase {
     }
 
     @MainActor
-    func testFailureFromUnownedMicrophoneCannotChangeCapture() throws {
-        let path = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".wav")
-        defer { try? FileManager.default.removeItem(at: path) }
-        let old = try AVAudioRecorder(url: path, settings: [AVFormatIDKey: kAudioFormatLinearPCM, AVSampleRateKey: 16000, AVNumberOfChannelsKey: 1])
-        let capture = AudioRecorder()
-        capture.microphoneFailed(old, message: "Stale encoder error")
-        XCTAssertNil(capture.captureFailure)
-    }
-
-    @MainActor
     func testCancellationStopsSuccessorSubprocessPhase() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)

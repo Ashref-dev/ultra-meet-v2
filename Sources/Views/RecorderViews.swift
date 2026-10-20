@@ -78,7 +78,7 @@ struct MeetingRow: View {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 status
                 Spacer(minLength: 4)
-                Text(Meeting.timestamp(meeting.id == state.activeID ? state.elapsed : meeting.duration))
+                Text(Meeting.timestamp(meeting.id == state.activeID ? state.elapsed : meeting.keptDuration))
                     .font(Theme.mono).secondaryText().monospacedDigit()
             }
         }

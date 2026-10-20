@@ -24,7 +24,7 @@ extension AppState {
             try library.save(meeting)
             meetings.insert(meeting, at: 0)
             selectedID = meeting.id
-            try await recorder.start(folder: library.folder(meeting.id), source: meeting.source)
+            try await recorder.start(folder: library.folder(meeting.id), source: meeting.source, microphone: preferences.microphone)
             try Task.checkCancellation()
             activeID = meeting.id
             update(meeting.id) { $0.status = .recording; $0.captureError = nil }

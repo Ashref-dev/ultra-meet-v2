@@ -24,6 +24,10 @@ struct LineActions {
     var seek: (TranscriptSegment) -> Void
     var redo: (TranscriptSegment, String?) -> Void
     var edit: (TranscriptSegment, String) -> Void
+    /// Sets the kept part of the meeting (see `Meeting.trim`); `nil` while it records, transcribes or is analyzed.
+    var trim: ((_ from: Double?, _ until: Double?) -> Void)?
+    var keepFrom: Double?
+    var keepUntil: Double?
 }
 
 /// One speaker turn: avatar and name on top, a colored rail binding every line underneath to them.
@@ -138,6 +142,14 @@ struct SpeakerBlockView: View {
                     }
                     .disabled(!actions.canRedo)
                 }
+                if let trim = actions.trim {
+                    Divider()
+                    Button("Start Meeting Here") { trim(segment.start, actions.keepUntil) }
+                    Button("End Meeting Here") { trim(actions.keepFrom, segment.end) }
+                    if actions.keepFrom != nil || actions.keepUntil != nil {
+                        Button("Restore Full Meeting") { trim(nil, nil) }
+                    }
+                }
             }
         }
     }
@@ -172,15 +184,24 @@ struct TimestampStyle: ButtonStyle {
 }
 
 /// The meeting at a glance: when you (green, top row) and colleagues (orange, bottom row) spoke, with the playhead.
-/// Click anywhere to play from that moment.
+/// Click anywhere to play from that moment. Time trimmed off is faint, and handles at the kept part's edges drag.
 struct ConversationMap: View {
     let segments: [TranscriptSegment]
     let duration: Double
     var position: Double?
     var seek: ((Double) -> Void)?
+    /// The kept part of a trimmed meeting; `nil` keeps all of it.
+    var kept: ClosedRange<Double>?
+    /// Saves new edges for the kept part; the handles show only when it is set.
+    var trim: ((_ from: Double?, _ until: Double?) -> Void)?
+    /// Previewed while dragging and saved once on release, so a drag writes the meeting and stales its notes once.
+    @State private var drag: (start: Bool, edges: ClosedRange<Double>)?
+    private static let space = "ConversationMap"
     var span: Double { max(1, duration, segments.map(\.end).max() ?? 0) }
+    var saved: ClosedRange<Double> { kept ?? 0...span }
     var body: some View {
         GeometryReader { geometry in
+            let edges = drag?.edges ?? saved
             Canvas { context, size in
                 let pitch: CGFloat = 5
                 let columns = max(1, Int(size.width / pitch))
@@ -194,9 +215,11 @@ struct ConversationMap: View {
                 }
                 for column in 0..<columns {
                     let x = CGFloat(column) * pitch + 0.9
+                    // Judged by the dot's center, so the faint part starts exactly at a handle.
+                    let faint = !edges.contains(Double((x + 1.6) / size.width) * span)
                     for (row, active, color) in [(0, spoke[column].you, Theme.you), (1, spoke[column].colleagues, Theme.colleagues)] {
                         let rect = CGRect(x: x, y: CGFloat(row) * 6 + 1, width: 3.2, height: 3.2)
-                        context.fill(Path(ellipseIn: rect), with: .color(active ? color : Theme.secondary.opacity(0.13)))
+                        context.fill(Path(ellipseIn: rect), with: .color((active ? color : Theme.secondary.opacity(0.13)).opacity(faint ? 0.3 : 1)))
                     }
                 }
                 if let position {
@@ -206,11 +229,93 @@ struct ConversationMap: View {
             }
             .contentShape(Rectangle())
             .onTapGesture { location in seek?(Double(location.x / max(1, geometry.size.width)) * span) }
+            .help(seek == nil ? "When each side spoke" : "When each side spoke. Click to play from there.")
+            .accessibilityElement()
+            .accessibilityLabel("Conversation timeline")
+            if trim != nil {
+                handle(start: true, edges: edges, size: geometry.size)
+                handle(start: false, edges: edges, size: geometry.size)
+            }
         }
+        .coordinateSpace(.named(Self.space))
         .frame(height: 12)
-        .help(seek == nil ? "When each side spoke" : "When each side spoke. Click to play from there.")
-        .accessibilityElement()
-        .accessibilityLabel("Conversation timeline")
+    }
+    /// Follows the pointer's travel in the map's space, not its position, so grabbing a handle off-center never
+    /// moves it. The grip lies mostly outside the kept part, so handles close together can both be grabbed.
+    func handle(start: Bool, edges: ClosedRange<Double>, size: CGSize) -> some View {
+        let seconds = start ? edges.lowerBound : edges.upperBound
+        return TrimHandle(start: start, seconds: seconds, dragging: drag?.start == start)
+            .gesture(DragGesture(minimumDistance: 0, coordinateSpace: .named(Self.space))
+                .onChanged { value in
+                    let grabbed = start ? saved.lowerBound : saved.upperBound
+                    drag = (start, moved(saved, start: start, to: grabbed + Double(value.translation.width / max(1, size.width)) * span))
+                }
+                .onEnded { _ in
+                    if let drag { save(drag.edges) }
+                    drag = nil
+                })
+            .accessibilityAdjustableAction { direction in
+                save(moved(edges, start: start, to: seconds + (direction == .increment ? 5 : -5)))
+            }
+            .position(x: CGFloat(seconds / span) * size.width + (start ? -2 : 2), y: size.height / 2)
+    }
+    /// Keeps at least 5 s, or the current length when that is shorter, and snaps edges within a second of the
+    /// start or end to it.
+    func moved(_ edges: ClosedRange<Double>, start: Bool, to seconds: Double) -> ClosedRange<Double> {
+        let minimum = min(5, edges.upperBound - edges.lowerBound)
+        if start {
+            let from = min(max(0, seconds), edges.upperBound - minimum)
+            return (from < 1 ? 0 : from)...edges.upperBound
+        }
+        let until = max(min(span, seconds), edges.lowerBound + minimum)
+        return edges.lowerBound...(until > span - 1 ? span : until)
+    }
+    func save(_ edges: ClosedRange<Double>) {
+        guard let trim, edges != saved else { return }
+        trim(edges.lowerBound, edges.upperBound)
+    }
+}
+
+/// One edge of the kept part: "[" at its start, "]" at its end, and the time while it is dragged.
+private struct TrimHandle: View {
+    let start: Bool
+    let seconds: Double
+    let dragging: Bool
+    @State private var hovering = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    var body: some View {
+        Bracket(opening: start)
+            .stroke(Theme.orange, style: StrokeStyle(lineWidth: hovering || dragging ? 2.5 : 2, lineCap: .round, lineJoin: .round))
+            .frame(width: 4, height: 18)
+            .frame(width: 12, height: 24, alignment: start ? .trailing : .leading)
+            .contentShape(Rectangle())
+            .overlay(alignment: .top) {
+                if dragging {
+                    MonoLabel(Meeting.timestamp(seconds), color: Theme.orange).fixedSize().offset(y: -14).transition(.opacity)
+                }
+            }
+            .onHover { hovering = $0 }
+            .pointerStyle(.columnResize)
+            .animation(reduceMotion ? nil : Theme.feedback, value: hovering || dragging)
+            .help(start ? "Drag to change where the meeting starts" : "Drag to change where the meeting ends")
+            .accessibilityElement()
+            .accessibilityLabel(start ? "Meeting start" : "Meeting end")
+            .accessibilityValue(Meeting.timestamp(seconds))
+    }
+}
+
+/// A square bracket with its spine on the left edge of `rect` when opening, on the right edge when closing.
+private struct Bracket: Shape {
+    let opening: Bool
+    func path(in rect: CGRect) -> Path {
+        let spine = opening ? rect.minX : rect.maxX
+        let tip = opening ? rect.maxX : rect.minX
+        var path = Path()
+        path.move(to: CGPoint(x: tip, y: rect.minY))
+        path.addLine(to: CGPoint(x: spine, y: rect.minY))
+        path.addLine(to: CGPoint(x: spine, y: rect.maxY))
+        path.addLine(to: CGPoint(x: tip, y: rect.maxY))
+        return path
     }
 }
 

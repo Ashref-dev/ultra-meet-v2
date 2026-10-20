@@ -31,6 +31,27 @@ extension AppState {
             }
         }
     }
+    /// Stores a transcribed meeting's audio as lossless FLAC. It runs inside an operation, so the worker never reads
+    /// a folder while its files are being swapped.
+    func compactAudio(_ id: UUID) async {
+        guard let meeting = meetings.first(where: { $0.id == id }), meeting.status == .ready, !meeting.audioDeleted, activeID != id else { return }
+        let folder = library.folder(id)
+        let work = Task.detached(priority: .utility) { try AudioArchive.compact(folder: folder) }
+        do { _ = try await withTaskCancellationHandler(operation: { try await work.value }, onCancel: { work.cancel() }) }
+        catch is CancellationError { return }
+        catch { self.error = "This meeting's audio couldn't be compressed: \(error.localizedDescription)" }
+    }
+    /// Compresses earlier meetings' audio, one meeting at a time, when no transcription is running.
+    func compactLibrary() {
+        let ids = meetings.filter { $0.status == .ready && !$0.audioDeleted }.map(\.id)
+        guard !ids.isEmpty else { return }
+        runOperation { [weak self] in
+            for id in ids {
+                guard let self, !Task.isCancelled, !self.preparingToQuit else { return }
+                await self.compactAudio(id)
+            }
+        }
+    }
     /// Transcribes while the meeting records, so Stop only has the last sentence left. Skipped when the engine is
     /// busy with another meeting or the model isn't installed; the meeting is then transcribed after Stop as usual.
     func beginLiveTranscription(_ id: UUID) {
@@ -66,6 +87,7 @@ extension AppState {
             }
             notifyReady(id)
             if preferences.analyzeAfterTranscription && !segments.isEmpty { analyze(id) }
+            await compactAudio(id)
         } catch {
             // A live transcription that ends before Stop (or with a recording that won't be transcribed) leaves the
             // meeting alone; Stop then transcribes it as usual.
@@ -82,8 +104,8 @@ extension AppState {
         }
     }
     func notifyReady(_ id: UUID) {
-        guard preferences.notifyWhenReady, Notifier.available, NSApp?.isActive == false, let meeting = meetings.first(where: { $0.id == id }), !meeting.segments.isEmpty else { return }
-        Notifier.post(id: id.uuidString, title: "Transcript ready", body: "\(meeting.title) · \(meeting.segments.count) lines", info: ["meeting": id.uuidString])
+        guard preferences.notifyWhenReady, Notifier.available, NSApp?.isActive == false, let meeting = meetings.first(where: { $0.id == id }), !meeting.keptSegments.isEmpty else { return }
+        Notifier.post(id: id.uuidString, title: "Transcript ready", body: "\(meeting.title) · \(meeting.keptSegments.count) lines", info: ["meeting": id.uuidString])
     }
     /// Transcribes one line again, as the given language or detecting it.
     func retranscribe(_ id: UUID, line: TranscriptSegment, as language: String?) {
@@ -131,6 +153,12 @@ extension AppState {
         }
         termSuggestion = terms.isEmpty ? nil : TermSuggestion(meetingID: id, terms: terms)
     }
+    /// Keeps only part of a finished meeting (see `Meeting.trim`). Not while it records, transcribes or is analyzed,
+    /// so notes in progress always match the part they were made from.
+    func trim(_ id: UUID, from: Double?, until: Double?) {
+        guard !isProtected(id), analyzingID != id else { return }
+        update(id) { $0.trim(from: from, until: until) }
+    }
     /// Capitalized words or words with digits that a correction added: likely names, products or jargon.
     nonisolated static func newTerms(in corrected: String, replacing original: String, known vocabulary: String) -> [String] {
         let old = Set(original.lowercased().components(separatedBy: .alphanumerics.inverted))
@@ -150,7 +178,7 @@ extension AppState {
         termSuggestion = nil
     }
     func analyze(_ id: UUID) {
-        guard analyzingID == nil, let meeting = meetings.first(where: { $0.id == id }), !meeting.segments.isEmpty else { return }
+        guard analyzingID == nil, let meeting = meetings.first(where: { $0.id == id }), !meeting.keptSegments.isEmpty else { return }
         analysisFailure = nil
         let key = readKey()
         guard !key.isEmpty else {

@@ -2,6 +2,16 @@
 
 All notable changes are listed here. Versions follow [Semantic Versioning](https://semver.org): `0.x` releases may still change behavior between minor versions.
 
+## Unreleased
+
+- Trim a meeting: drag the handles on the conversation map, or right-click a line and choose Start Meeting Here or End Meeting Here. The cut part is left out of the transcript, playback, AI notes, export and copy, and Restore brings it back. Audio and lines are never deleted.
+- Recording no longer changes what you hear. Opening a Bluetooth headset's microphone switches it to call quality (muffled, compressed sound for everything it plays), so the microphone is now chosen in Settings → Recording, and Automatic records your Mac's microphone whenever the default input is a Bluetooth headset. Mac audio is captured without opening any device's microphone.
+- Both tracks are recorded through Core Audio from one shared start, and recording follows the hardware: switching speakers or headphones, or plugging in a microphone, moves the recording to the new device instead of losing the rest of the meeting.
+- Playback brings You and Colleagues to the same level, turning a loud microphone down as well as lifting quiet call audio.
+- Much smaller storage. Recordings are 16-bit (Mac audio was 32-bit), and once a meeting is transcribed its audio is kept as lossless FLAC at full 48 kHz, about a ninth of the size. Earlier meetings are compressed in the background after launch. Each file is read back and compared sample by sample before the original is removed.
+- The menu-bar panel opens active: the record button is orange and the glass at full strength on the first click, without taking focus from your call app.
+- Removed the Mic mode setting and menu item: Ultra Transcribe records the microphone as it is, and its own processing cleans the audio for transcription.
+
 ## 0.7.1 · 2026-10-15
 
 - The menu-bar panel is frosted Liquid Glass on macOS 26 and later: it blurs what is behind it, tinted lighter in light mode and darker in dark mode, with the system's vibrant text colors. It still opens under the icon and closes on Esc, a click elsewhere or a second click on the icon.
