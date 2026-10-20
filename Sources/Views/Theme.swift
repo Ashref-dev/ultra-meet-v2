@@ -11,6 +11,11 @@ enum Theme {
     /// Deep tones for the center of the dot waveform; it fades to the speaker color at the edges, as in the reference.
     static let youDeep = adaptive(light: NSColor(red: 0.03, green: 0.34, blue: 0.21, alpha: 1), dark: NSColor(red: 0.12, green: 0.55, blue: 0.34, alpha: 1))
     static let colleaguesDeep = adaptive(light: NSColor(red: 0.70, green: 0.15, blue: 0.09, alpha: 1), dark: NSColor(red: 0.86, green: 0.29, blue: 0.16, alpha: 1))
+    /// The accent and speaker colors for small text: at least 4.5:1 on paper, background and the orange selection
+    /// fill, where the base tones measure 2.8 to 4.5:1. Fills, dots, rails and icons keep the base tones.
+    static let orangeText = adaptive(light: NSColor(red: 0.72, green: 0.19, blue: 0.04, alpha: 1), dark: NSColor(red: 0.98, green: 0.47, blue: 0.27, alpha: 1))
+    static let youText = adaptive(light: NSColor(red: 0.06, green: 0.48, blue: 0.30, alpha: 1), dark: NSColor(red: 0.33, green: 0.78, blue: 0.53, alpha: 1))
+    static let colleaguesText = adaptive(light: NSColor(red: 0.70, green: 0.30, blue: 0.02, alpha: 1), dark: NSColor(red: 0.98, green: 0.60, blue: 0.24, alpha: 1))
     static let readingWidth: CGFloat = 640
     /// Cards and sections.
     static let radius: CGFloat = 12
@@ -37,6 +42,13 @@ enum Theme {
         switch source {
         case "microphone": return you
         case "system": return colleagues
+        default: return secondary
+        }
+    }
+    static func speakerText(_ source: String) -> Color {
+        switch source {
+        case "microphone": return youText
+        case "system": return colleaguesText
         default: return secondary
         }
     }

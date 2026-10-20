@@ -622,7 +622,13 @@ def rounded(confidence: float | None) -> float | None:
 
 
 def tracks_in(folder: Path) -> list[Path]:
-    return sorted(path for path in folder.iterdir() if path.suffix.lower() in AUDIO_SUFFIXES)
+    """One file per track. A track can briefly exist twice while the app compresses it (system.caf and system.flac
+    hold the same samples); the original is used, so its lines are never transcribed twice."""
+    chosen: dict[str, Path] = {}
+    for path in sorted(folder.iterdir()):
+        if path.suffix.lower() in AUDIO_SUFFIXES and (path.stem not in chosen or chosen[path.stem].suffix.lower() == ".flac"):
+            chosen[path.stem] = path
+    return sorted(chosen.values())
 
 
 def spoken_languages(languages: str) -> list[str]:

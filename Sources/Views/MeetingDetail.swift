@@ -9,6 +9,7 @@ struct MeetingDetail: View {
     @StateObject private var playback = AudioPlayback()
     @State private var copied = false
     @State private var playingLineID: UUID?
+    @State private var followsNewest = true
     /// Listed from the meeting folder when it changes, not on every render; `nil` until the first listing.
     @State private var listedAudio: [URL]?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -46,7 +47,7 @@ struct MeetingDetail: View {
         .onChange(of: AudioFolder(id: meeting.id, deleted: meeting.audioDeleted, status: meeting.status, offscreen: offscreen), initial: true) { _, folder in
             if !folder.offscreen { listedAudio = listAudio() }
         }
-        .onChange(of: meeting.id) { _, _ in playback.stop(); copied = false; tab = "Transcript" }
+        .onChange(of: meeting.id) { _, _ in playback.stop(); copied = false; followsNewest = true; tab = "Transcript" }
         .onChange(of: tab) { _, _ in copied = false }
         .onChange(of: state.activeID) { _, id in if id != nil { playback.stop() } }
         .onChange(of: meeting.audioDeleted) { _, deleted in if deleted { playback.stop() } }
@@ -67,9 +68,9 @@ struct MeetingDetail: View {
             try? await Task.sleep(for: .seconds(1.6))
             copied = false
         }
-        .confirmationDialog("Permanently delete this meeting’s audio?", isPresented: $deleteAudioConfirmation) {
+        .confirmationDialog("Delete this meeting’s audio?", isPresented: $deleteAudioConfirmation) {
             Button("Delete Audio", role: .destructive) { playback.stop(); state.deleteAudio(meeting.id) }
-        } message: { Text("The transcript and notes stay. You won’t be able to play or transcribe the recording again.") }
+        } message: { Text("The transcript and notes stay. The audio moves to the Trash, and the meeting can’t be played or transcribed again.") }
     }
 
     // MARK: Header
@@ -90,8 +91,8 @@ struct MeetingDetail: View {
                         }
                         .buttonStyle(ControlStyle(compact: true)).animation(reduceMotion ? nil : Theme.feedback, value: copied)
                         .keyboardShortcut("c", modifiers: [.command, .shift])
-                        .disabled(copyText.isEmpty)
-                        .help(copyText.isEmpty ? "Nothing to copy yet" : "Copy the \(tab == "AI notes" ? "AI notes" : tab.lowercased()) (⌘⇧C)")
+                        .disabled(nothingToCopy)
+                        .help(nothingToCopy ? "Nothing to copy yet" : "Copy the \(tab == "AI notes" ? "AI notes" : tab.lowercased()) (⌘⇧C)")
                         Button { state.export(meeting) } label: {
                             HStack(spacing: 6) { Label("Export", systemImage: "square.and.arrow.up"); ShortcutHint("⌘⇧E") }
                         }
@@ -105,9 +106,14 @@ struct MeetingDetail: View {
             EditableTitle(title: meeting.title, size: 26) { state.rename(meeting.id, to: $0) }
                 .padding(.top, 8)
             HStack(spacing: 12) {
-                MonoLabel(([meeting.createdAt.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated).year().hour().minute()), Meeting.timestamp(isActive ? state.elapsed : meeting.keptDuration)]
-                    + (meeting.segments.isEmpty || isActive ? [] : [meeting.model.fullName])).joined(separator: " · "))
-                    .help(meeting.segments.isEmpty || isActive ? "" : "Transcribed with \(meeting.model.fullName)")
+                Group {
+                    if isActive {
+                        ElapsedReader(clock: state.clock) { MonoLabel(metadata(duration: $0)) }
+                    } else {
+                        MonoLabel(metadata(duration: meeting.keptDuration))
+                    }
+                }
+                .help(meeting.segments.isEmpty || isActive ? "" : "Transcribed with \(meeting.model.fullName)")
                 Spacer()
                 if !speakers.isEmpty {
                     HStack(spacing: 8) {
@@ -118,6 +124,10 @@ struct MeetingDetail: View {
             }
         }
         .padding(.horizontal, 24).padding(.top, 24).padding(.bottom, 16)
+    }
+    func metadata(duration: Double) -> String {
+        ([meeting.createdAt.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated).year().hour().minute()), Meeting.timestamp(duration)]
+            + (meeting.segments.isEmpty || isActive ? [] : [meeting.model.fullName])).joined(separator: " · ")
     }
     var speakers: [String] {
         let sources = Set(meeting.keptSegments.map(\.source))
@@ -140,13 +150,21 @@ struct MeetingDetail: View {
             Button("Delete Audio…", role: .destructive) { deleteAudioConfirmation = true }.disabled(isActive || isTranscribing || meeting.audioDeleted)
         }
     }
+    /// The meeting's error with its next steps. As with AI notes failures, a message that names a Settings pane opens
+    /// it. Without the speech model, Transcribe Again would only repeat the error, so only Settings is offered.
     func notice(_ message: String) -> some View {
-        HStack(alignment: .top, spacing: 8) {
+        let canRetry = canSeek && !isTranscribing && meeting.segments.isEmpty
+        let modelMissing = canRetry && !state.engine.ready(state.speechModel(for: meeting))
+        let pane: SettingsPane? = modelMissing ? .transcription : SettingsPane.mentioned(in: message)
+        return HStack(alignment: .top, spacing: 8) {
             Image(systemName: "exclamationmark.circle").foregroundStyle(Theme.orange)
             Text(message).font(.system(size: 12)).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
             Spacer()
-            if canSeek && !isTranscribing && meeting.segments.isEmpty {
-                Button("Transcribe Again") { state.transcribe(meeting.id) }.buttonStyle(ControlStyle(compact: true))
+            GlassControls {
+                HStack(spacing: 8) {
+                    if let pane { Button("Open Settings") { state.showSettings(pane) }.buttonStyle(ControlStyle(compact: true)) }
+                    if canRetry && !modelMissing { Button("Transcribe Again") { state.transcribe(meeting.id) }.buttonStyle(ControlStyle(compact: true)) }
+                }
             }
         }
         .padding(.horizontal, 24).padding(.vertical, 12).background(Theme.orange.opacity(0.07))
@@ -188,10 +206,9 @@ struct MeetingDetail: View {
                         if meeting.isTrimmed {
                             HStack(spacing: 6) {
                                 Image(systemName: "scissors").font(.system(size: 10.5, weight: .medium))
-                                Text("Trimmed to \(Meeting.timestamp(meeting.keptRange.lowerBound)) to \(Meeting.timestamp(meeting.keptRange.upperBound))")
+                                Text("Kept \(Meeting.timestamp(meeting.keptRange.lowerBound)) to \(Meeting.timestamp(meeting.keptRange.upperBound))")
                                 if canTrim {
-                                    Button("Restore") { state.trim(meeting.id, from: nil, until: nil) }
-                                        .buttonStyle(.plain).foregroundStyle(Theme.orange)
+                                    Button("Restore") { state.trim(meeting.id, from: nil, until: nil) }.buttonStyle(TextLinkStyle())
                                 }
                             }
                             .font(.system(size: 11.5)).foregroundStyle(Theme.secondary)
@@ -204,8 +221,7 @@ struct MeetingDetail: View {
                             Image(systemName: "speaker.slash").font(.system(size: 10.5, weight: .medium))
                             Text(meeting.audioDeleted ? "Audio deleted. The transcript and notes are kept." : "Audio files are missing from this meeting’s folder.")
                             if !meeting.audioDeleted {
-                                Button("Show in Finder") { NSWorkspace.shared.open(state.library.folder(meeting.id)) }
-                                    .buttonStyle(.plain).foregroundStyle(Theme.orange)
+                                Button("Show in Finder") { NSWorkspace.shared.open(state.library.folder(meeting.id)) }.buttonStyle(TextLinkStyle())
                             }
                         }
                         .font(.system(size: 11.5)).foregroundStyle(Theme.secondary)
@@ -227,20 +243,24 @@ struct MeetingDetail: View {
                 .animation(reduceMotion ? nil : Theme.feedback, value: state.termSuggestion)
                 .thinScrollbars()
             }
-            .onChange(of: playingLineID) { _, line in
+            .onChange(of: playingLineID) { previous, line in
                 guard let line, playback.playing else { return }
-                withAnimation(reduceMotion ? nil : Theme.selection) { proxy.scrollTo(line, anchor: .center) }
+                // The lazy stack knows every speaker turn's id but builds a turn's lines only near the screen, so a
+                // line in another turn is reached through its turn; within the turn on screen, the line itself.
+                let turn = SpeakerBlock.group(meeting.keptSegments).first { $0.segments.contains { $0.id == line } }
+                let target = turn?.segments.contains { $0.id == previous } == true ? line : turn?.id ?? line
+                withAnimation(reduceMotion ? nil : Theme.selection) { proxy.scrollTo(target, anchor: .center) }
             }
         }
     }
     var progressing: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                VStack(alignment: .leading, spacing: 22) {
+                LazyVStack(alignment: .leading, spacing: 22) {
                     HStack(spacing: 10) {
                         if isLive {
                             Circle().fill(Theme.orange).frame(width: 6, height: 6)
-                            MonoLabel("Live transcript · lines appear as people finish sentences", color: Theme.orange)
+                            MonoLabel("Live transcript · lines appear as people finish sentences", color: Theme.orangeText)
                         } else {
                             DotProgress(value: state.engine.fraction, dots: 24).frame(width: 120, height: 5)
                             MonoLabel(state.engine.message)
@@ -255,7 +275,16 @@ struct MeetingDetail: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .thinScrollbars()
             }
-            .onChange(of: inProgress.count) { _, _ in withAnimation(reduceMotion ? nil : Theme.selection) { proxy.scrollTo("end", anchor: .bottom) } }
+            .onScrollGeometryChange(for: ScrollGeometry.self) { $0 } action: { old, new in
+                // New lines grow the content without moving it, so only the reader's own scrolling decides whether
+                // the newest line is followed.
+                guard new.contentOffset != old.contentOffset else { return }
+                followsNewest = new.visibleRect.maxY >= new.contentSize.height - 48
+            }
+            .onChange(of: inProgress.count) { _, _ in
+                guard followsNewest else { return }
+                withAnimation(reduceMotion ? nil : Theme.selection) { proxy.scrollTo("end", anchor: .bottom) }
+            }
         }
     }
     var placeholder: some View {
@@ -357,16 +386,23 @@ struct MeetingDetail: View {
     var playRange: (from: Double, until: Double?) {
         (meeting.keptRange.lowerBound, meeting.keepUntil == nil ? nil : meeting.keptRange.upperBound)
     }
-    var copyText: String {
+    /// Checked on every render, so it never builds the text; `copyContent` does that once, on click.
+    var nothingToCopy: Bool {
         switch tab {
-        case "Transcript": return meeting.keptSegments.isEmpty ? "" : meeting.transcript
-        case "My notes": return meeting.notes
-        default: return meeting.summary.isEmpty ? "" : meeting.shareableNotes
+        case "Transcript": return meeting.keptSegments.isEmpty
+        case "My notes": return meeting.notes.isEmpty
+        default: return meeting.summary.isEmpty
         }
     }
     func copyContent() {
+        guard !nothingToCopy else { return }
+        let text = switch tab {
+        case "Transcript": meeting.transcript
+        case "My notes": meeting.notes
+        default: meeting.shareableNotes
+        }
         NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(copyText, forType: .string)
+        NSPasteboard.general.setString(text, forType: .string)
         copied = true
     }
 }
@@ -488,7 +524,8 @@ struct AnalysisView: View {
             .help(meeting.segments.isEmpty ? "Transcribe the meeting first" : meeting.keptSegments.isEmpty ? "No lines are left after trimming" : "Analyze with \(state.preferences.openRouterModel)")
     }
     func failureView(_ message: String) -> some View {
-        InlineHint(symbol: "exclamationmark.circle.fill", text: message, action: message.contains("Settings") ? ("Open Settings", { state.showSettings(.analysis) }) : nil)
+        let pane: SettingsPane? = SettingsPane.mentioned(in: message) ?? (message.contains("Settings") ? .analysis : nil)
+        return InlineHint(symbol: "exclamationmark.circle.fill", text: message, action: pane.map { pane -> (title: String, run: () -> Void) in ("Open Settings", { state.showSettings(pane) }) })
             .frame(maxWidth: 460, alignment: .leading)
     }
 }

@@ -42,17 +42,19 @@ final class AudioRecorder: ObservableObject {
     @Published var paused = false
     let levels = LevelMeter()
     private var captures: [AudioCapture] = []
+    private var microphone: AudioCapture?
+    private var system: AudioCapture?
     private var meter: Timer?
     private var clock: RecordingClock?
-    private var microphoneLevel: Float = 0
-    private var systemLevel: Float = 0
     private var captureID = UUID()
     var duration: Double { clock?.elapsed() ?? 0 }
     private(set) var captureFailure: String?
     var onError: ((String) -> Void)?
 
-    /// Records the chosen sides into `folder`, both from one shared start so You and Colleagues line up.
-    func start(folder: URL, source: AudioSource, microphone: String?) async throws {
+    /// Records the chosen sides into `folder`, both from one shared start so You and Colleagues line up. Returns the
+    /// sides actually recording and, when Mac audio couldn't start, why: the microphone still records, so the
+    /// meeting isn't lost to a missing output device or permission.
+    func start(folder: URL, source: AudioSource, microphone preferred: String?, channel: Int?) async throws -> (AudioSource, String?) {
         captureFailure = nil
         captureID = UUID()
         let session = captureID
@@ -61,39 +63,44 @@ final class AudioRecorder: ObservableObject {
             guard allowed else { throw AppError.message("Microphone access is off. Enable Ultra Transcribe in System Settings → Privacy & Security → Microphone, then try again.") }
         }
         try Task.checkCancellation()
+        var recording = source
+        var warning: String?
         do {
             let started = AVAudioTime.seconds(forHostTime: AudioGetCurrentHostTime())
-            if source != .microphone { try begin(.system, file: folder.appendingPathComponent("system.caf"), started: started, session: session) }
-            if source != .system { try begin(.microphone(preferred: microphone), file: folder.appendingPathComponent("microphone.caf"), started: started, session: session) }
+            if source != .microphone {
+                do { system = try begin(.system, file: folder.appendingPathComponent("system.caf"), started: started, session: session) }
+                catch where source == .both {
+                    recording = .microphone
+                    warning = "Mac audio isn’t being recorded, only your microphone. \(error.localizedDescription)"
+                }
+            }
+            if source != .system { self.microphone = try begin(.microphone(preferred: preferred, channel: channel), file: folder.appendingPathComponent("microphone.caf"), started: started, session: session) }
             paused = false
             clock = RecordingClock()
             levels.reset()
-            let recordsMicrophone = source != .system, recordsSystem = source != .microphone
             meter = Timer(timeInterval: 0.08, repeats: true) { [weak self] _ in
-                Task { @MainActor in
-                    guard let self, !self.paused else { return }
-                    let you = recordsMicrophone ? Self.normalized(self.microphoneLevel) : 0
-                    self.levels.push(.init(you: you, colleagues: Self.normalized(self.systemLevel)), interval: 0.08,
-                                     silent: (recordsMicrophone && self.microphoneLevel < 0.000_01, recordsSystem && self.systemLevel < 0.000_01))
+                MainActor.assumeIsolated {
+                    guard let self, !self.paused, self.captureID == session else { return }
+                    let you = self.microphone?.level, colleagues = self.system?.level
+                    self.levels.push(.init(you: Self.normalized(you ?? 0), colleagues: Self.normalized(colleagues ?? 0)), interval: 0.08,
+                                     silent: ((you ?? 1) < 0.000_01, (colleagues ?? 1) < 0.000_01))
                 }
             }
             if let meter { RunLoop.main.add(meter, forMode: .common) }
         } catch { await stop(); throw error }
+        return (recording, warning)
     }
-    private func begin(_ source: AudioCapture.Source, file: URL, started: Double, session: UUID) throws {
+    private func begin(_ source: AudioCapture.Source, file: URL, started: Double, session: UUID) throws -> AudioCapture {
         let capture = AudioCapture(source)
         let errorHandler = onError
         capture.onError = { [weak self] message in Task { @MainActor in
-            if self?.captureID == session { self?.captureFailure = message }
-            errorHandler?(message)
-        } }
-        let isSystem = source == .system
-        capture.onLevel = { [weak self] value in Task { @MainActor in
             guard self?.captureID == session else { return }
-            if isSystem { self?.systemLevel = value } else { self?.microphoneLevel = value }
+            self?.captureFailure = message
+            errorHandler?(message)
         } }
         captures.append(capture)
         try capture.start(url: file, started: started)
+        return capture
     }
     private static func normalized(_ rms: Float) -> Float { LevelMeter.normalized(decibels: 20 * log10(max(rms, 0.000_001))) }
     func togglePause() {
@@ -107,8 +114,9 @@ final class AudioRecorder: ObservableObject {
         captures.forEach { $0.stop() }
         captureFailure = captureFailure ?? captures.lazy.compactMap(\.captureFailure).first
         captures = []
-        microphoneLevel = 0
-        systemLevel = 0
+        microphone = nil
+        system = nil
+        captureID = UUID() // late errors and levels from this recording are ignored
         paused = false
         clock = nil
     }

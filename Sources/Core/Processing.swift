@@ -9,6 +9,7 @@ extension AppState {
         do { try await engine.setup(model: model) }
         catch is CancellationError { }
         catch { self.error = error.localizedDescription }
+        drainQueue() // meetings stopped during the download were queued and are transcribed now
     }
     func deleteModel(_ model: ASRModel) {
         do { try engine.delete(model) }
@@ -26,7 +27,8 @@ extension AppState {
     }
     func drainQueue() {
         runOperation { [weak self] in
-            while let self, !Task.isCancelled, !self.queued.isEmpty {
+            // A download or setup in progress owns the engine; queued meetings wait for it instead of being dropped.
+            while let self, !Task.isCancelled, !self.queued.isEmpty, !self.engine.busy {
                 await self.process(self.queued.removeFirst())
             }
         }
@@ -36,20 +38,32 @@ extension AppState {
     func compactAudio(_ id: UUID) async {
         guard let meeting = meetings.first(where: { $0.id == id }), meeting.status == .ready, !meeting.audioDeleted, activeID != id else { return }
         let folder = library.folder(id)
+        compactingID = id // retention, Delete Audio and Trash wait while its files are swapped
+        defer { compactingID = nil }
         let work = Task.detached(priority: .utility) { try AudioArchive.compact(folder: folder) }
         do { _ = try await withTaskCancellationHandler(operation: { try await work.value }, onCancel: { work.cancel() }) }
         catch is CancellationError { return }
         catch { self.error = "This meeting's audio couldn't be compressed: \(error.localizedDescription)" }
     }
-    /// Compresses earlier meetings' audio, one meeting at a time, when no transcription is running.
+    /// Compresses earlier meetings' audio, one meeting per operation, when nothing else is running. A recording
+    /// that starts meanwhile cancels it (`yieldMaintenance`), so live transcription isn't held up.
     func compactLibrary() {
-        let ids = meetings.filter { $0.status == .ready && !$0.audioDeleted }.map(\.id)
-        guard !ids.isEmpty else { return }
+        guard activeID == nil, !preparingToQuit, operationTask == nil, !engine.busy,
+              let id = meetings.first(where: { $0.status == .ready && !$0.audioDeleted && library.hasUncompressedAudio($0.id) })?.id else { return }
         runOperation { [weak self] in
-            for id in ids {
-                guard let self, !Task.isCancelled, !self.preparingToQuit else { return }
-                await self.compactAudio(id)
-            }
+            await self?.compactAudio(id)
+            guard let self, !Task.isCancelled else { return }
+            Task { @MainActor [weak self] in self?.compactLibrary() } // runs after this operation has released the slot
+        }
+    }
+    /// Stops background compression for a recording, then starts live transcription once the slot is free.
+    func yieldMaintenance(for id: UUID) {
+        guard compactingID != nil, let operationTask else { return }
+        operationTask.cancel()
+        Task { @MainActor [weak self] in
+            await operationTask.value
+            guard let self, self.activeID == id else { return }
+            self.beginLiveTranscription(id)
         }
     }
     /// Transcribes while the meeting records, so Stop only has the last sentence left. Skipped when the engine is
@@ -105,7 +119,8 @@ extension AppState {
     }
     func notifyReady(_ id: UUID) {
         guard preferences.notifyWhenReady, Notifier.available, NSApp?.isActive == false, let meeting = meetings.first(where: { $0.id == id }), !meeting.keptSegments.isEmpty else { return }
-        Notifier.post(id: id.uuidString, title: "Transcript ready", body: "\(meeting.title) · \(meeting.keptSegments.count) lines", info: ["meeting": id.uuidString])
+        // The title stays out of the notification: it can show on the lock screen and may name something confidential.
+        Notifier.post(id: id.uuidString, title: "Transcript ready", body: "Your meeting is transcribed. Click to open it.", info: ["meeting": id.uuidString])
     }
     /// Transcribes one line again, as the given language or detecting it.
     func retranscribe(_ id: UUID, line: TranscriptSegment, as language: String?) {

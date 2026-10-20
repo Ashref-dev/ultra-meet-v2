@@ -54,7 +54,7 @@ struct SpeakerBlockView: View {
             .frame(width: 26)
             VStack(alignment: .leading, spacing: 9) {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Text(block.segments[0].speaker).font(.system(size: 13, weight: .semibold)).foregroundStyle(color)
+                    Text(block.segments[0].speaker).font(.system(size: 13, weight: .semibold)).foregroundStyle(Theme.speakerText(block.source))
                     MonoLabel(Meeting.timestamp(block.segments[0].start))
                 }
                 .padding(.top, 4)
@@ -176,7 +176,7 @@ struct TimestampStyle: ButtonStyle {
         @Environment(\.isEnabled) private var enabled
         var body: some View {
             configuration.label
-                .foregroundStyle(hovering && enabled ? Theme.orange : Theme.secondary.opacity(0.8))
+                .foregroundStyle(hovering && enabled ? Theme.orangeText : Theme.secondary)
                 .underline(hovering && enabled, color: Theme.orange.opacity(0.5))
                 .onHover { hovering = $0 }
         }
@@ -255,7 +255,9 @@ struct ConversationMap: View {
                     drag = nil
                 })
             .accessibilityAdjustableAction { direction in
-                save(moved(edges, start: start, to: seconds + (direction == .increment ? 5 : -5)))
+                // At most a hundred steps across a meeting; 5 s steps would take 720 swipes to cross an hour.
+                let step = max(5, span / 100)
+                save(moved(edges, start: start, to: seconds + (direction == .increment ? step : -step)))
             }
             .position(x: CGFloat(seconds / span) * size.width + (start ? -2 : 2), y: size.height / 2)
     }
@@ -291,7 +293,7 @@ private struct TrimHandle: View {
             .contentShape(Rectangle())
             .overlay(alignment: .top) {
                 if dragging {
-                    MonoLabel(Meeting.timestamp(seconds), color: Theme.orange).fixedSize().offset(y: -14).transition(.opacity)
+                    MonoLabel(Meeting.timestamp(seconds), color: Theme.orangeText).fixedSize().offset(y: -14).transition(.opacity)
                 }
             }
             .onHover { hovering = $0 }
@@ -326,8 +328,8 @@ struct TalkTimeLabels: View {
         let time = meeting.talkTime
         let total = max(1, time.you + time.colleagues)
         HStack(spacing: 14) {
-            if time.you > 0 { MonoLabel("You \(Meeting.timestamp(time.you)) · \(Int((time.you / total * 100).rounded()))%", color: Theme.you) }
-            if time.colleagues > 0 { MonoLabel("Colleagues \(Meeting.timestamp(time.colleagues)) · \(Int((time.colleagues / total * 100).rounded()))%", color: Theme.colleagues) }
+            if time.you > 0 { MonoLabel("You \(Meeting.timestamp(time.you)) · \(Int((time.you / total * 100).rounded()))%", color: Theme.youText) }
+            if time.colleagues > 0 { MonoLabel("Colleagues \(Meeting.timestamp(time.colleagues)) · \(Int((time.colleagues / total * 100).rounded()))%", color: Theme.colleaguesText) }
         }
         .accessibilityElement(children: .combine)
     }
@@ -352,5 +354,21 @@ struct InlineHint: View {
         }
         .padding(.leading, 12).padding(.trailing, 8).padding(.vertical, 8)
         .background(Theme.orange.opacity(0.07), in: RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous))
+    }
+}
+
+extension InlineHint {
+    /// `AppState.error`, as the panel and the library show it: dismissible, and one click from the Settings pane it names.
+    init(error: String, openSettings: @escaping (SettingsPane) -> Void, dismiss: @escaping () -> Void) {
+        self.init(symbol: "exclamationmark.circle.fill", text: error,
+                  action: SettingsPane.mentioned(in: error).map { pane -> (title: String, run: () -> Void) in ("Open Settings", { openSettings(pane) }) },
+                  dismiss: dismiss)
+    }
+}
+
+extension SettingsPane {
+    /// The pane a message sends people to, written as "Settings → Recording".
+    static func mentioned(in message: String) -> SettingsPane? {
+        allCases.first { message.contains("Settings → \($0.title)") }
     }
 }

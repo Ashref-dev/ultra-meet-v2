@@ -9,10 +9,11 @@ struct SetupView: View {
     @State private var step = 0
     @StateObject private var check = MicrophoneCheck()
     @State private var microphone = AVCaptureDevice.authorizationStatus(for: .audio)
-    @State private var macAudio: String?
+    @State private var macAudio: (asked: Bool, message: String)?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     static let steps = ["Welcome", "You", "Colleagues", "Speech", "AI notes", "Ready"]
     private static let icon = LogoGlyph.appIcon(size: 160)
+    private static let screenCapturePrivacy = "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture"
 
     var body: some View {
         VStack(spacing: 0) {
@@ -56,7 +57,7 @@ struct SetupView: View {
         }
         .frame(width: 580, height: 560)
         .background(Theme.background.ignoresSafeArea())
-        .onChange(of: step) { _, value in if value == 1 && microphone == .authorized { check.start() } else { check.stop() } }
+        .onChange(of: step) { _, value in if value == 1 && microphone == .authorized { startCheck() } else { check.stop() } }
         .onDisappear { check.stop() }
     }
 
@@ -92,7 +93,7 @@ struct SetupView: View {
     var welcome: some View {
         VStack(alignment: .leading, spacing: 20) {
             Image(nsImage: Self.icon).resizable().frame(width: 80, height: 80).accessibilityHidden(true)
-            title("Welcome to Ultra Transcribe", "Meeting notes for the AI-native era, made on your Mac.")
+            title("Welcome to Ultra Transcribe", "Records meetings from the menu bar and transcribes them on this Mac.")
             feature(AnyView(HStack(spacing: -6) { SpeakerAvatar(source: "microphone", size: 22); SpeakerAvatar(source: "system", size: 22) }), "You and your colleagues, on separate tracks", "Every line of the transcript says who spoke.")
             feature(AnyView(icon("lock.fill")), "Transcribed on this Mac", "Audio never leaves it. Quiet voices and whispers are picked up too.")
             feature(AnyView(icon("sparkles")), "Notes when you ask", "A summary, decisions and action items from the AI model you choose.")
@@ -110,7 +111,7 @@ struct SetupView: View {
                     Text(check.failure ?? "Say something. The dots should move with your voice.").font(.system(size: 12.5)).foregroundStyle(Theme.secondary)
                 }
                 .padding(12).card()
-                Label("Microphone allowed", systemImage: "checkmark.circle.fill").font(.system(size: 12.5)).foregroundStyle(Theme.you)
+                Label("Microphone allowed", systemImage: "checkmark.circle.fill").font(.system(size: 12.5)).foregroundStyle(Theme.youText)
             case .denied, .restricted:
                 InlineHint(symbol: "mic.slash", text: "Microphone access is off. Turn on Ultra Transcribe in Privacy & Security → Microphone.", action: ("Open…", { open("x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone") }))
             default:
@@ -123,9 +124,11 @@ struct SetupView: View {
     var colleagues: some View {
         VStack(alignment: .leading, spacing: 16) {
             title("Your colleagues", "Call audio playing on this Mac is recorded as Colleagues, in orange. Ultra Transcribe never records your screen.")
-            if let macAudio {
-                Label(macAudio, systemImage: "checkmark.circle.fill").font(.system(size: 12.5)).foregroundStyle(Theme.colleagues)
-                Button("Open Privacy Settings…") { open("x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") }.buttonStyle(ControlStyle(compact: true))
+            if let macAudio, macAudio.asked {
+                Label(macAudio.message, systemImage: "checkmark.circle.fill").font(.system(size: 12.5)).foregroundStyle(Theme.colleaguesText)
+                Button("Open Privacy Settings…") { open(Self.screenCapturePrivacy) }.buttonStyle(ControlStyle(compact: true))
+            } else if let macAudio {
+                InlineHint(symbol: "speaker.slash", text: macAudio.message, action: ("Open…", { open(Self.screenCapturePrivacy) }))
             } else {
                 Button { requestMacAudio() } label: { Label("Allow Mac Audio", systemImage: "speaker.wave.2.fill") }.buttonStyle(ControlStyle(kind: .primary))
                 Text("macOS asks for “System Audio Recording Only”. If you skip this, it asks at your first recording.").font(.system(size: 11.5)).foregroundStyle(Theme.secondary)
@@ -222,18 +225,22 @@ struct SetupView: View {
         Task {
             _ = await AVCaptureDevice.requestAccess(for: .audio)
             microphone = AVCaptureDevice.authorizationStatus(for: .audio)
-            if microphone == .authorized && step == 1 { check.start() }
+            if microphone == .authorized && step == 1 { startCheck() }
         }
+    }
+    func startCheck() {
+        check.start(microphone: state.preferences.microphone, channel: state.preferences.microphoneChannel, in: state.library.scratch)
     }
     /// Starting a system audio capture for a moment is what makes macOS ask for permission.
     func requestMacAudio() {
         let tap = AudioCapture(.system)
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("ultra-transcribe-permission-\(UUID().uuidString).caf")
+        let url = state.library.scratch.appendingPathComponent("permission-\(UUID().uuidString).caf")
         do {
+            try FileManager.default.createDirectory(at: state.library.scratch, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
             try tap.start(url: url)
-            macAudio = "Asked. If macOS showed a prompt, choose Allow."
+            macAudio = (true, "Asked. If macOS showed a prompt, choose Allow.")
         } catch {
-            macAudio = "macOS didn’t allow it yet. Turn on Ultra Transcribe under Screen & System Audio Recording → System Audio Recording Only."
+            macAudio = (false, error.localizedDescription)
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
             tap.stop()
@@ -243,24 +250,25 @@ struct SetupView: View {
     func open(_ address: String) { if let url = URL(string: address) { NSWorkspace.shared.open(url) } }
 }
 
-/// A microphone level check for setup: records the microphone Ultra Transcribe will use into a temporary file that
-/// is deleted right away.
+/// A microphone level check for setup: records the microphone Ultra Transcribe will use into a file in the library's
+/// scratch folder that is deleted right away.
 @MainActor
 final class MicrophoneCheck: ObservableObject {
     let meter = LevelMeter()
     @Published var failure: String?
     private var capture: AudioCapture?
-    private var level: Float = 0
     private var timer: Timer?
-    private let url = FileManager.default.temporaryDirectory.appendingPathComponent("ultra-transcribe-mic-check.caf")
+    private var url: URL?
 
-    func start(microphone: String? = nil) {
+    func start(microphone: String?, channel: Int?, in folder: URL) {
         guard capture == nil else { return }
-        let input = AudioCapture(.microphone(preferred: microphone))
-        input.onLevel = { [weak self] value in Task { @MainActor in self?.level = value } }
+        let input = AudioCapture(.microphone(preferred: microphone, channel: channel))
+        let file = folder.appendingPathComponent("microphone-check.caf")
         do {
-            try input.start(url: url)
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+            try input.start(url: file)
             capture = input
+            url = file
             failure = nil
         } catch {
             failure = error.localizedDescription
@@ -269,7 +277,7 @@ final class MicrophoneCheck: ObservableObject {
         timer = Timer(timeInterval: 0.08, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 guard let self else { return }
-                self.meter.push(.init(you: LevelMeter.normalized(decibels: 20 * log10(max(self.level, 0.000_001))), colleagues: 0), interval: 0.08)
+                self.meter.push(.init(you: LevelMeter.normalized(decibels: 20 * log10(max(self.capture?.level ?? 0, 0.000_001))), colleagues: 0), interval: 0.08)
             }
         }
         if let timer { RunLoop.main.add(timer, forMode: .common) }
@@ -280,7 +288,8 @@ final class MicrophoneCheck: ObservableObject {
         timer = nil
         capture?.stop()
         capture = nil
-        try? FileManager.default.removeItem(at: url)
+        if let url { try? FileManager.default.removeItem(at: url) }
+        url = nil
         meter.reset()
     }
 }

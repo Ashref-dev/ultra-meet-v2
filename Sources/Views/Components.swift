@@ -214,7 +214,7 @@ struct TabStrip: View {
                         Image(systemName: tab.symbol).font(.system(size: 11, weight: .semibold))
                         Text(tab.id).font(.system(size: 12.5, weight: selection == tab.id ? .semibold : .medium))
                     }
-                    .foregroundStyle(selection == tab.id ? Theme.orange : Theme.secondary)
+                    .foregroundStyle(selection == tab.id ? Theme.orangeText : Theme.secondary)
                     .padding(.horizontal, 12)
                     .frame(height: Theme.controlHeight)
                     .background {
@@ -227,7 +227,6 @@ struct TabStrip: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(PressStyle())
-                .focusEffectDisabled()
                 .keyboardShortcut(KeyEquivalent(Character(String(index + 1))), modifiers: .command)
                 .help("\(tab.id) (⌘\(index + 1))")
                 .accessibilityAddTraits(selection == tab.id ? [.isSelected, .isButton] : .isButton)
@@ -250,6 +249,26 @@ struct PressStyle: ButtonStyle {
                 .scaleEffect(reduceMotion || !configuration.isPressed ? 1 : 0.97)
                 .opacity(configuration.isPressed ? 0.82 : 1)
                 .animation(reduceMotion ? nil : Theme.feedback, value: configuration.isPressed)
+        }
+    }
+}
+
+/// An action inside a line of text, such as Restore under the conversation map: orange, underlined under the pointer.
+struct TextLinkStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View { TextLinkBody(configuration: configuration) }
+    private struct TextLinkBody: View {
+        let configuration: ButtonStyleConfiguration
+        @Environment(\.isEnabled) private var enabled
+        @State private var hovering = false
+        var body: some View {
+            configuration.label
+                .fontWeight(.semibold)
+                .foregroundStyle(enabled ? Theme.orangeText : Theme.secondary)
+                .underline(hovering && enabled)
+                .opacity(configuration.isPressed ? 0.82 : 1)
+                .contentShape(Rectangle())
+                .pointerStyle(.link)
+                .onHover { hovering = $0 }
         }
     }
 }
@@ -346,7 +365,7 @@ struct ShortcutHint: View {
     let keys: String
     init(_ keys: String) { self.keys = keys }
     var body: some View {
-        Text(keys).font(.system(size: 11, weight: .medium)).secondaryText().opacity(0.8).accessibilityHidden(true)
+        Text(keys).font(.system(size: 11, weight: .medium)).secondaryText().accessibilityHidden(true)
     }
 }
 
@@ -701,7 +720,6 @@ struct Segmented<Value: Hashable>: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .focusEffectDisabled()
                 .accessibilityAddTraits(selection == value ? [.isSelected, .isButton] : .isButton)
             }
         }

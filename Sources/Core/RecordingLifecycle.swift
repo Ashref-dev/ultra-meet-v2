@@ -24,18 +24,21 @@ extension AppState {
             try library.save(meeting)
             meetings.insert(meeting, at: 0)
             selectedID = meeting.id
-            try await recorder.start(folder: library.folder(meeting.id), source: meeting.source, microphone: preferences.microphone)
+            let (recording, warning) = try await recorder.start(folder: library.folder(meeting.id), source: meeting.source, microphone: preferences.microphone, channel: preferences.microphoneChannel)
+            if let warning { self.error = warning }
+            if recording != meeting.source { update(meeting.id) { $0.source = recording } }
             try Task.checkCancellation()
             activeID = meeting.id
             update(meeting.id) { $0.status = .recording; $0.captureError = nil }
-            elapsed = 0
+            clock.seconds = 0
             recordingTimer = Timer(timeInterval: 0.5, repeats: true) { [weak self] _ in
                 Task { @MainActor in
                     guard let self, !self.recorder.paused, self.activeID != nil else { return }
-                    self.elapsed = self.recorder.duration
+                    self.clock.seconds = self.recorder.duration
                 }
             }
             if let recordingTimer { RunLoop.main.add(recordingTimer, forMode: .common) }
+            yieldMaintenance(for: meeting.id)
             beginLiveTranscription(meeting.id)
         } catch is CancellationError {
             await recorder.stop()
@@ -61,10 +64,10 @@ extension AppState {
         defer { stopping = false }
         recordingTimer?.invalidate()
         recordingTimer = nil
-        elapsed = recorder.duration
+        clock.seconds = recorder.duration
         await recorder.stop()
         update(id) {
-            $0.duration = elapsed
+            $0.duration = clock.seconds
             $0.captureError = $0.captureError ?? recorder.captureFailure
             $0.status = $0.captureError == nil ? .interrupted : .failed
             if let failure = $0.captureError { $0.error = "Recording is incomplete: \(failure). Retained audio is protected from automatic deletion." }
@@ -115,7 +118,8 @@ extension AppState {
         operationTask = Task {
             defer {
                 operationTask = nil
-                if !queued.isEmpty && !preparingToQuit && !Task.isCancelled { drainQueue() }
+                // Also after a cancel: meetings queued while it unwound would otherwise wait for the next event.
+                if !queued.isEmpty && !preparingToQuit { drainQueue() }
             }
             guard !Task.isCancelled else { return }
             await work()

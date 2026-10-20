@@ -20,8 +20,11 @@ enum Keychain {
     static func save(_ value: String) throws {
         let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecAttrAccount as String: "openrouter"]
         if value.isEmpty {
-            let result = SecItemDelete(query as CFDictionary)
-            guard result == errSecSuccess || result == errSecItemNotFound else { throw AppError.message("Could not remove the key from Keychain (\(result)).") }
+            // The pre-rebrand item goes too, or the next read would migrate the removed key back.
+            for name in [service, legacyService] {
+                let result = SecItemDelete([kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: name, kSecAttrAccount as String: "openrouter"] as CFDictionary)
+                guard result == errSecSuccess || result == errSecItemNotFound else { throw AppError.message("Could not remove the key from Keychain (\(result)).") }
+            }
             return
         }
         let attributes: [String: Any] = [kSecValueData as String: Data(value.utf8)]

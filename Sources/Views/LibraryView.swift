@@ -20,18 +20,24 @@ struct LibraryView: View {
             return true
         }
     }()
-    /// Search ignores case, accents and Arabic spelling variants (see `searchFolded`).
-    var query: String { state.search.trimmingCharacters(in: .whitespaces).searchFolded }
-    var filtered: [Meeting] {
-        guard !query.isEmpty else { return state.meetings }
-        return state.meetings.filter { meeting in
-            [meeting.title, meeting.summary, meeting.notes].contains { $0.searchFolded.contains(query) } || meeting.segments.contains { $0.text.searchFolded.contains(query) }
-        }
+    /// A meeting that matches the search and, when its title doesn't, the first transcript line that does, shown under
+    /// the meeting so results explain themselves.
+    struct SearchResult: Identifiable {
+        let meeting: Meeting
+        let line: TranscriptSegment?
+        var id: UUID { meeting.id }
     }
-    /// The first transcript line that matches, shown under the meeting so results explain themselves.
-    func snippet(_ meeting: Meeting) -> TranscriptSegment? {
-        guard !query.isEmpty, !meeting.title.searchFolded.contains(query) else { return nil }
-        return meeting.segments.first { $0.text.searchFolded.contains(query) }
+    /// Search ignores case, accents and Arabic spelling variants (see `searchFolded`). Folding transcripts is the
+    /// expensive part, so the query is folded once and each meeting is read once.
+    var results: [SearchResult] {
+        let query = state.search.trimmingCharacters(in: .whitespaces).searchFolded
+        guard !query.isEmpty else { return state.meetings.map { SearchResult(meeting: $0, line: nil) } }
+        return state.meetings.compactMap { meeting in
+            if meeting.title.searchFolded.contains(query) { return SearchResult(meeting: meeting, line: nil) }
+            let line = meeting.segments.first { $0.text.searchFolded.contains(query) }
+            guard line != nil || meeting.summary.searchFolded.contains(query) || meeting.notes.searchFolded.contains(query) else { return nil }
+            return SearchResult(meeting: meeting, line: line)
+        }
     }
     var body: some View {
         HStack(spacing: 0) {
@@ -39,10 +45,18 @@ struct LibraryView: View {
                 sidebar.frame(width: 272).floatingSidebar(Theme.paper)
                     .transition(.move(edge: .leading).combined(with: .opacity))
             }
-            Group {
-                if let meeting = state.selected { MeetingDetail(state: state, meeting: meeting) } else { emptyState }
+            VStack(spacing: 0) {
+                if let error = state.error {
+                    InlineHint(error: error, openSettings: state.showSettings) { state.error = nil }
+                        .padding(.horizontal, 24).padding(.top, 16)
+                        .transition(.opacity)
+                }
+                Group {
+                    if let meeting = state.selected { MeetingDetail(state: state, meeting: meeting) } else { emptyState }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .animation(reduceMotion ? nil : Theme.feedback, value: state.error)
         }
         .background(Theme.paper.ignoresSafeArea())
         .overlay { if dropTargeted { dropHint.transition(.opacity) } }
@@ -64,9 +78,6 @@ struct LibraryView: View {
         })
         .animation(reduceMotion ? nil : Theme.selection, value: collapsed)
         .frame(minWidth: collapsed ? 560 : 820, minHeight: 560)
-        .alert("Something needs your attention", isPresented: Binding(get: { state.error != nil }, set: { if !$0 { state.error = nil } })) {
-            Button("OK") { state.error = nil }
-        } message: { Text(state.error ?? "") }
         .confirmationDialog("Move this meeting and its audio to the Trash?", isPresented: Binding(get: { deleteID != nil }, set: { if !$0 { deleteID = nil } })) {
             Button("Move to Trash", role: .destructive) { if let id = deleteID { state.deleteMeeting(id) }; deleteID = nil }
                 .disabled(deleteID.map { state.isProtected($0) } ?? true)
@@ -74,8 +85,7 @@ struct LibraryView: View {
         } message: { Text("You can restore it from the Finder Trash until it’s emptied.") }
     }
     var sidebar: some View {
-        // Filtering folds every transcript, so it runs once per render, not once per use.
-        let results = filtered
+        let results = self.results
         return VStack(spacing: 0) {
             HStack(spacing: 8) {
                 LogoMark(size: 13)
@@ -92,7 +102,7 @@ struct LibraryView: View {
                             Circle().fill(state.recorder.paused ? Theme.secondary : Theme.orange).frame(width: 7, height: 7)
                             Text(state.recorder.paused ? "Paused" : "Recording")
                             Spacer()
-                            Text(Meeting.timestamp(state.elapsed)).monospacedDigit()
+                            ElapsedReader(clock: state.clock) { Text(Meeting.timestamp($0)) }.monospacedDigit()
                         }
                     }.buttonStyle(ControlStyle(expand: true))
                 } else {
@@ -105,11 +115,12 @@ struct LibraryView: View {
             SearchField(prompt: "Search meetings", text: $state.search, findShortcut: true)
                 .padding(.horizontal, 12).padding(.top, 8).padding(.bottom, 8)
             ScrollViewReader { proxy in
-            List(results) { meeting in
+            List(results) { result in
+                let meeting = result.meeting
                 Button { state.selectedID = meeting.id } label: {
                     VStack(alignment: .leading, spacing: 6) {
                         MeetingRow(state: state, meeting: meeting)
-                        if let line = snippet(meeting) {
+                        if let line = result.line {
                             HStack(alignment: .firstTextBaseline, spacing: 6) {
                                 Circle().fill(Theme.speakerColor(line.source)).frame(width: 5, height: 5)
                                 Text(line.text).font(.system(size: 11.5)).foregroundStyle(Theme.secondary).lineLimit(2)
@@ -161,7 +172,7 @@ struct LibraryView: View {
     }
     /// Moves the selection through the visible meetings with the arrow keys.
     func select(step: Int) -> Bool {
-        let results = filtered
+        let results = self.results
         guard !results.isEmpty else { return false }
         let current = results.firstIndex { $0.id == state.selectedID }
         let next = current.map { min(max($0 + step, 0), results.count - 1) } ?? 0

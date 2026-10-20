@@ -254,6 +254,8 @@ struct Preferences: Codable, Equatable {
     var analyzeAfterTranscription = false
     /// The microphone that records You, as a Core Audio device UID; nil picks one automatically (see `AudioDevice.microphone`).
     var microphone: String?
+    /// The input channel of the chosen microphone, 0-based, for interfaces with several inputs.
+    var microphoneChannel: Int?
     var checkForUpdates = true
     /// Becomes true once the first-run setup is finished or skipped.
     var setupDone = false
@@ -291,6 +293,7 @@ struct Preferences: Codable, Equatable {
         notifyWhenReady = (try? values.decodeIfPresent(Bool.self, forKey: .notifyWhenReady)) ?? defaults.notifyWhenReady
         analyzeAfterTranscription = (try? values.decodeIfPresent(Bool.self, forKey: .analyzeAfterTranscription)) ?? defaults.analyzeAfterTranscription
         microphone = try? values.decodeIfPresent(String.self, forKey: .microphone)
+        microphoneChannel = try? values.decodeIfPresent(Int.self, forKey: .microphoneChannel)
         checkForUpdates = (try? values.decodeIfPresent(Bool.self, forKey: .checkForUpdates)) ?? defaults.checkForUpdates
         setupDone = (try? values.decodeIfPresent(Bool.self, forKey: .setupDone)) ?? defaults.setupDone
     }

@@ -18,11 +18,24 @@ enum AudioArchive {
 
     static func compact(_ url: URL) throws -> Int64 {
         let destination = url.deletingPathExtension().appendingPathExtension("flac")
-        guard !FileManager.default.fileExists(atPath: destination.path) else { return 0 }
         let source = try AVAudioFile(forReading: url)
         let description = source.fileFormat.streamDescription.pointee
         guard description.mFormatID == kAudioFormatLinearPCM, source.length > 0 else { return 0 }
         let isFloat = description.mFormatFlags & kAudioFormatFlagIsFloat != 0
+        if FileManager.default.fileExists(atPath: destination.path) {
+            // Left by a compression the app quit during. A copy that matches retires the original; any other goes to
+            // the Trash and the track is compressed again, so a meeting never keeps two versions of one track.
+            let before = size(url)
+            do {
+                try verify(original: url, copy: destination, tolerance: isFloat ? 0.5001 / 32768 : 0)
+                try FileManager.default.removeItem(at: url) // its samples are all in the verified copy
+                return before
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                try FileManager.default.trashItem(at: destination, resultingItemURL: nil)
+            }
+        }
         guard isFloat || description.mBitsPerChannel == 16 || description.mBitsPerChannel == 24 else { return 0 } // FLAC can't hold 32-bit integers exactly
         let scratch = try FileManager.default.url(for: .itemReplacementDirectory, in: .userDomainMask, appropriateFor: url, create: true)
         defer { try? FileManager.default.removeItem(at: scratch) }

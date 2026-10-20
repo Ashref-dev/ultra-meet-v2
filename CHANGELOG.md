@@ -4,6 +4,18 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 
 ## Unreleased
 
+- Recording is more robust on every kind of Mac and audio setup. The audio callback only copies samples; conversion and disk writes happen separately, so a busy disk can't cause dropouts. A device that stops delivering audio (unplugged, a stalled driver, after sleep) is reopened within seconds, and the gap is kept as silence so both tracks stay in sync. Timing uses the moment each buffer was captured.
+- Mac audio is recorded through a capture device that contains only Mac audio, not your speakers or headphones; if a Mac can't run that, it falls back automatically.
+- Automatic microphone choice works on desktop Macs: a USB or display microphone is used before a Bluetooth headset, and virtual devices (Zoom, Teams, BlackHole) are used only when chosen. Audio interfaces with several inputs get an Input channel choice in Settings → Recording. The microphone list updates when devices are plugged in, and the You toggle names the microphone that will record.
+- If Mac audio can't be recorded, the microphone still records and the panel says why, instead of the meeting failing.
+- Deleted audio, by you or by the retention setting, now goes to the Trash. Shortening retention asks before it removes anything.
+- Background audio compression never competes with a meeting: it pauses for a recording, protects the meeting it is working on from deletion, finishes cleanly on quit, and tidies up a track left in both formats by an earlier quit.
+- An interrupted Transcribe Again no longer brings back an earlier transcript over your corrections. Meetings stopped during a model download are transcribed once it finishes.
+- Cancelling or quitting always finishes, even if the speech model doesn't respond. Worker errors show one readable line and where the full log is.
+- Errors in the library show inline with a way to fix them (Open Settings), not as a dialog. A missing speech model offers Open Settings instead of a Transcribe Again that can't work.
+- Orange accent for dialogs, focus rings and text selection; keyboard focus is visible on tabs, segmented controls, toggles and lists. Orange, green and colleague text meet WCAG AA contrast in light and dark mode.
+- The status item says when a speech model is downloading, and panel tooltips work.
+- Update checks require the download to be signed by Apple-issued certificates for this developer and app. Notifications no longer show meeting titles. Setup's test recordings stay inside the private library and are cleared at launch. Removing the OpenRouter key also removes the copy saved before the rebrand.
 - Trim a meeting: drag the handles on the conversation map, or right-click a line and choose Start Meeting Here or End Meeting Here. The cut part is left out of the transcript, playback, AI notes, export and copy, and Restore brings it back. Audio and lines are never deleted.
 - Recording no longer changes what you hear. Opening a Bluetooth headset's microphone switches it to call quality (muffled, compressed sound for everything it plays), so the microphone is now chosen in Settings → Recording, and Automatic records your Mac's microphone whenever the default input is a Bluetooth headset. Mac audio is captured without opening any device's microphone.
 - Both tracks are recorded through Core Audio from one shared start, and recording follows the hardware: switching speakers or headphones, or plugging in a microphone, moves the recording to the new device instead of losing the rest of the meeting.

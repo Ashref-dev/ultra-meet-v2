@@ -4,6 +4,11 @@ What was verified for the current release, and how. Update this file with every 
 
 ## Unreleased
 
+Second pass after five read-only reviews (audio capture, state and persistence, UI and UX, transcription worker, security). `swift test`: 59 pass (new: automatic microphone on desktops and with virtual devices, channel lookup across streams, archive reconciling a track left in two formats, recovery keeping corrections over an older transcript). `basedpyright`: 0 errors. `ruff`: clean. Release build, strict signature verification, and the updater's new signing requirement checked against the installed app (accepted) and an ad-hoc signed copy (rejected). `python -I worker.py` runs.
+
+- Not changed, needs evidence first: the echo filter can drop a short genuine reply that follows the same words from Mac audio within 2 s. Changing it needs a speakerphone test set (AGENTS.md: recognition changes are measured). Also open: playback normalization never turns speech down in the worker; `scripts/eval` reports matched-character error, not Levenshtein CER; live passes rescan all history (about 137 ms per track per pass at 3 hours); hardened runtime and notarization.
+- Not seen or heard on hardware: the tap-only Mac audio device and its fallback, device stall recovery, sleep and wake, input channels on a multi-input interface, desktop Macs, the accent color in dialogs, focus rings, the retention confirmation.
+
 Environment: Apple Silicon, 24 GB memory, macOS 27. `swift test`: 56 pass (new: automatic microphone never picks a Bluetooth headset, FLAC archive keeps 16-bit audio sample-exact and replaces originals only after verification, chosen-microphone preference, trim model and decoding, playback leveling down). Release build and strict signature verification passed.
 
 - Why call audio sounded muffled: measured on three real meetings. Tracks recorded during calls had nothing above 8 to 12 kHz and the microphone track had hundreds of stretches of exact digital silence, the signature of a Bluetooth headset in call mode. The microphone was opened with `AVAudioRecorder` on the default input, which is the headset when one is connected.

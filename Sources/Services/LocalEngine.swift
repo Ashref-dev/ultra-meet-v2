@@ -95,10 +95,22 @@ final class LocalEngine: ObservableObject {
         return result
     }
     static let finishFile = ".finish"
+    /// The last line a failed worker printed (usually the exception), short enough to read in a notice.
+    nonisolated static func reason(_ log: String) -> String {
+        let line = log.split(whereSeparator: \.isNewline).last { !$0.trimmingCharacters(in: .whitespaces).isEmpty }.map(String.init) ?? "The worker stopped unexpectedly."
+        let trimmed = line.trimmingCharacters(in: .whitespaces)
+        return trimmed.count > 240 ? String(trimmed.prefix(240)) + "…" : trimmed
+    }
     func cancel() {
         cancellationRequested = true
-        if process?.isRunning == true { process?.terminate() }
+        guard let running = process, running.isRunning else { return }
+        running.terminate()
         message = "Cancelling…"
+        // A model busy in native code can ignore SIGTERM; after five seconds it is stopped for good, so cancelling and
+        // quitting always finish.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
+            if running.isRunning { kill(running.processIdentifier, SIGKILL) }
+        }
     }
     private func resource(_ name: String) -> URL { Bundle.module.url(forResource: name, withExtension: nil, subdirectory: "Resources")! }
     private func worker(_ arguments: [String], progressFolder: URL) async throws {
@@ -112,19 +124,29 @@ final class LocalEngine: ObservableObject {
         progressTimer = Timer.scheduledTimer(withTimeInterval: 0.8, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 guard let self else { return }
-                if let data = try? Data(contentsOf: progressURL), let progress = try? JSONDecoder().decode(WorkerProgress.self, from: data) {
-                    self.message = progress.message
-                    self.fraction = progress.fraction
+                let known = self.partialStamp
+                // Read off the main thread: a long meeting's partial transcript is megabytes of JSON.
+                let (progress, stamp, segments) = await Task.detached(priority: .utility) { () -> (WorkerProgress?, Date?, [TranscriptSegment]?) in
+                    let progress = (try? Data(contentsOf: progressURL)).flatMap { try? JSONDecoder().decode(WorkerProgress.self, from: $0) }
+                    let stamp = (try? partialURL.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
+                    guard let stamp, stamp != known else { return (progress, nil, nil) }
+                    let segments = (try? Data(contentsOf: partialURL)).flatMap { try? JSONDecoder().decode(WorkerTranscript.self, from: $0) }?.segments
+                    return (progress, stamp, segments)
+                }.value
+                guard self.progressTimer != nil else { return } // the run ended while reading
+                if let progress {
+                    if self.message != progress.message { self.message = progress.message }
+                    if self.fraction != progress.fraction { self.fraction = progress.fraction }
                 }
-                let stamp = (try? partialURL.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
-                if let stamp, stamp != self.partialStamp, let data = try? Data(contentsOf: partialURL), let transcript = try? JSONDecoder().decode(WorkerTranscript.self, from: data) {
+                if let stamp, let segments {
                     self.partialStamp = stamp
-                    self.partial = transcript.segments
+                    self.partial = segments
                 }
             }
         }
         defer { progressTimer?.invalidate(); progressTimer = nil; partial = [] }
-        try await execute(python, arguments: [resource("worker.py").path] + arguments)
+        // -I: isolated, so PYTHONPATH, user site-packages or files next to the script can't change what runs.
+        try await execute(python, arguments: ["-I", resource("worker.py").path] + arguments)
     }
     func execute(_ executable: URL, arguments: [String]) async throws {
         try Task.checkCancellation()
@@ -162,7 +184,8 @@ final class LocalEngine: ObservableObject {
         guard !cancellationRequested else { throw CancellationError() }
         guard status == 0 else {
             let output = (try? String(contentsOf: logURL, encoding: .utf8)) ?? ""
-            throw AppError.message(status == 15 ? "Processing cancelled. The audio and any completed transcript remain on this Mac." : "Local processing failed (\(status)). \(String(output.suffix(1800)))")
+            guard status != 15 && status != 9 else { throw AppError.message("Processing cancelled. The audio and any completed transcript remain on this Mac.") }
+            throw AppError.message("Local processing failed. \(Self.reason(output)) Details are in \(logURL.path).")
         }
     }
 }

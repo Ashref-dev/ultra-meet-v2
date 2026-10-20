@@ -1,3 +1,4 @@
+import CoreAudio
 import SwiftUI
 
 /// Timer, pause and start/stop: the recorder's footer, shared by the menu-bar panel and the meeting window.
@@ -7,12 +8,15 @@ struct RecorderControls: View {
     var recording: Bool { state.activeID != nil }
     var body: some View {
         HStack(spacing: 10) {
-            Text(Meeting.timestamp(recording ? state.elapsed : 0))
-                .font(.system(size: 13, weight: .medium, design: .monospaced)).monospacedDigit()
-                .foregroundStyle(.primary)
-                .opacity(recording && !state.recorder.paused ? 1 : 0.55)
-                .contentTransition(.numericText())
-                .accessibilityLabel("Elapsed time \(Meeting.timestamp(state.elapsed))")
+            ElapsedReader(clock: state.clock) { seconds in
+                let shown = Meeting.timestamp(recording ? seconds : 0)
+                Text(shown)
+                    .font(.system(size: 13, weight: .medium, design: .monospaced)).monospacedDigit()
+                    .foregroundStyle(.primary)
+                    .opacity(recording && !state.recorder.paused ? 1 : 0.55)
+                    .contentTransition(.numericText())
+                    .accessibilityLabel("Elapsed time \(shown)")
+            }
             Spacer(minLength: 12)
             GlassControls {
                 HStack(spacing: 8) {
@@ -47,6 +51,13 @@ struct RecorderControls: View {
     }
 }
 
+/// Content that shows the recording time. Only this observes the clock, so its tick redraws the time, not the window.
+struct ElapsedReader<Content: View>: View {
+    @ObservedObject var clock: ElapsedClock
+    @ViewBuilder let content: (Double) -> Content
+    var body: some View { content(clock.seconds) }
+}
+
 /// Record button content: a glyph, replaced by dot progress while the action runs.
 struct RecordLabel<Glyph: View>: View {
     let title: String
@@ -78,8 +89,14 @@ struct MeetingRow: View {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 status
                 Spacer(minLength: 4)
-                Text(Meeting.timestamp(meeting.id == state.activeID ? state.elapsed : meeting.keptDuration))
-                    .font(Theme.mono).secondaryText().monospacedDigit()
+                Group {
+                    if meeting.id == state.activeID {
+                        ElapsedReader(clock: state.clock) { Text(Meeting.timestamp($0)) }
+                    } else {
+                        Text(Meeting.timestamp(meeting.keptDuration))
+                    }
+                }
+                .font(Theme.mono).secondaryText().monospacedDigit()
             }
         }
         .contentShape(Rectangle())
@@ -92,17 +109,17 @@ struct MeetingRow: View {
             if meeting.id == state.processingID {
                 HStack(spacing: 8) {
                     DotProgress(value: state.engine.fraction, dots: 24).frame(width: 120, height: 5)
-                    MonoLabel("\(Int(state.engine.fraction * 100))%", color: Theme.orange)
+                    MonoLabel("\(Int(state.engine.fraction * 100))%", color: Theme.orangeText)
                 }
                 .frame(height: 13)
             } else {
                 HStack(spacing: 6) {
                     if state.renamedID == meeting.id {
                         Image(systemName: "sparkles").font(.system(size: 9, weight: .semibold)).foregroundStyle(Theme.orange)
-                        MonoLabel("Renamed by AI", color: Theme.orange)
+                        MonoLabel("Renamed by AI", color: Theme.orangeText)
                     } else if let activity {
                         Circle().fill(Theme.orange).frame(width: 5, height: 5)
-                        MonoLabel(activity, color: Theme.orange)
+                        MonoLabel(activity, color: Theme.orangeText)
                     } else {
                         MonoLabel(meeting.createdAt.formatted(.dateTime.day().month(.abbreviated).hour().minute()))
                         if !meeting.summary.isEmpty { Image(systemName: "sparkles").font(.system(size: 9)).foregroundStyle(Theme.orange).accessibilityLabel("Analyzed") }
@@ -123,14 +140,16 @@ struct MeetingRow: View {
 /// Who gets recorded: You (microphone) and Colleagues (Mac audio). Refuses, with a shake, to turn both off.
 struct SourcePicker: View {
     @ObservedObject var state: AppState
+    @StateObject private var devices = InputDevices()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var refused: CGFloat = 0
     var body: some View {
         HStack(spacing: 8) {
-            SourcePill(title: "You", detail: "Microphone", symbol: "mic.fill", color: Theme.you, isOn: binding(microphone: true))
+            SourcePill(title: "You", detail: devices.recording(preferred: state.preferences.microphone)?.name ?? "Microphone", symbol: "mic.fill", color: Theme.you, isOn: binding(microphone: true))
             SourcePill(title: "Colleagues", detail: "Mac audio", symbol: "speaker.wave.2.fill", color: Theme.colleagues, isOn: binding(microphone: false))
         }
         .modifier(Shake(animatableData: reduceMotion ? 0 : refused))
+        .modifier(FollowsDevices(devices: devices))
     }
     func binding(microphone: Bool) -> Binding<Bool> {
         let source = state.preferences.source
@@ -184,6 +203,60 @@ struct SourcePill: View {
         .accessibilityLabel("\(title), \(detail)")
         .accessibilityValue(isOn ? "Recorded" : "Not recorded")
         .accessibilityAddTraits(.isToggle)
+    }
+}
+
+/// The connected microphones, kept current by Core Audio while a view that shows them is on screen: connecting or
+/// removing one, or changing the default input, refreshes the list.
+@MainActor
+final class InputDevices: ObservableObject {
+    @Published private(set) var inputs: [AudioDevice] = []
+    @Published private(set) var defaultID: AudioObjectID?
+    /// Input channels by device UID, read with the list instead of on every render.
+    @Published private(set) var channels: [String: Int] = [:]
+    private var listener: AudioObjectPropertyListenerBlock?
+    private static let watched = [kAudioHardwarePropertyDevices, kAudioHardwarePropertyDefaultInputDevice]
+
+    /// The microphone that records You: the chosen one while it is connected, otherwise the automatic one.
+    func recording(preferred uid: String?) -> AudioDevice? {
+        AudioDevice.microphone(preferred: uid, among: inputs, defaultID: defaultID)
+    }
+    func start() {
+        refresh()
+        guard listener == nil else { return }
+        let listener: AudioObjectPropertyListenerBlock = { [weak self] _, _ in MainActor.assumeIsolated { self?.refresh() } }
+        for selector in Self.watched {
+            var address = Self.address(selector)
+            AudioObjectAddPropertyListenerBlock(AudioObjectID(kAudioObjectSystemObject), &address, .main, listener)
+        }
+        self.listener = listener
+    }
+    func stop() {
+        guard let listener else { return }
+        for selector in Self.watched {
+            var address = Self.address(selector)
+            AudioObjectRemovePropertyListenerBlock(AudioObjectID(kAudioObjectSystemObject), &address, .main, listener)
+        }
+        self.listener = nil
+    }
+    private func refresh() {
+        inputs = AudioDevice.inputs()
+        defaultID = AudioDevice.defaultDevice(input: true)
+        channels = Dictionary(inputs.map { ($0.uid, $0.channelCount) }) { first, _ in first }
+    }
+    private static func address(_ selector: AudioObjectPropertySelector) -> AudioObjectPropertyAddress {
+        AudioObjectPropertyAddress(mSelector: selector, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+    }
+}
+
+struct FollowsDevices: ViewModifier {
+    let devices: InputDevices
+    @Environment(\.offscreen) private var offscreen
+    func body(content: Content) -> some View {
+        content
+            .onAppear { if !offscreen { devices.start() } }
+            .onChange(of: offscreen) { _, hidden in if hidden { devices.stop() } else { devices.start() } }
+            .onDisappear { devices.stop() }
     }
 }
 

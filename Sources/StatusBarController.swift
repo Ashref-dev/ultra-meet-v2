@@ -52,6 +52,10 @@ final class StatusBarController: NSObject, NSWindowDelegate {
             .throttle(for: .milliseconds(120), scheduler: RunLoop.main, latest: true)
             .sink { [weak self] _ in self?.refresh() }
             .store(in: &subscriptions)
+        state.clock.$seconds
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in self?.refresh() }
+            .store(in: &subscriptions)
         state.$activeID.removeDuplicates().dropFirst()
             .filter { $0 != nil }
             .sink { [weak self] _ in self?.getOutOfTheWay() }
@@ -123,7 +127,7 @@ final class StatusBarController: NSObject, NSWindowDelegate {
     private func menu() -> NSMenu {
         let menu = NSMenu()
         let recording = state.activeID != nil
-        let status = NSMenuItem(title: recording ? "\(state.recorder.paused ? "Paused" : "Recording") · \(Meeting.timestamp(state.elapsed))" : state.processingID != nil ? "Transcribing · \(Int(state.engine.fraction * 100))%" : "Ready to record", action: nil, keyEquivalent: "")
+        let status = NSMenuItem(title: recording ? "\(state.recorder.paused ? "Paused" : "Recording") · \(Meeting.timestamp(state.clock.seconds))" : state.processingID != nil ? "Transcribing · \(Int(state.engine.fraction * 100))%" : "Ready to record", action: nil, keyEquivalent: "")
         status.isEnabled = false
         menu.addItem(status)
         menu.addItem(.separator())
@@ -165,22 +169,29 @@ final class StatusBarController: NSObject, NSWindowDelegate {
         let recording = state.activeID != nil
         let paused = recording && state.recorder.paused
         let working = !recording && state.isWorking
-        if working && ripple == nil {
+        let progress = state.processingID != nil ? state.engine.fraction : 0
+        // The ripple only decorates unknown progress, so with Reduce Motion the logo stays still instead.
+        let ripples = working && progress <= 0.03 && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        if ripples && ripple == nil {
             ripple = Timer.scheduledTimer(withTimeInterval: 0.12, repeats: true) { [weak self] _ in
                 MainActor.assumeIsolated { self?.phase += 0.7; self?.refresh() }
             }
-        } else if !working, let timer = ripple {
+        } else if !ripples, let timer = ripple {
             timer.invalidate()
             ripple = nil
         }
-        let progress = state.processingID != nil ? state.engine.fraction : 0
-        let levels = recording && !paused ? columnLevels() : working ? (progress > 0.03 ? progressLevels(progress) : rippleLevels()) : nil
+        let levels = recording && !paused ? columnLevels() : working && progress > 0.03 ? progressLevels(progress) : ripples ? rippleLevels() : nil
+        let time = Meeting.timestamp(state.clock.seconds)
+        let downloading = !recording && state.engine.downloading != nil
+        let percent = state.engine.fraction > 0 ? " \(Int(state.engine.fraction * 100))%" : ""
+        let tip = recording ? "\(paused ? "Paused" : "Recording") · \(time)" : downloading ? "Downloading speech model" : working ? "Transcribing\(percent)" : "Ultra Transcribe"
+        if button.toolTip != tip { button.toolTip = tip }
+        let value = recording ? (paused ? "Paused" : "Recording \(time)") : downloading ? "Downloading speech model" : working ? "Transcribing" : "Ready"
+        if button.accessibilityValue() as? String != value { button.setAccessibilityValue(value) }
         let key = paused ? "paused" : levels.map { $0.map { String(Int($0 * 5)) }.joined() } ?? "idle"
         guard key != appearance else { return }
         appearance = key
         button.image = Self.icon(levels: levels, alpha: paused ? 0.4 : 1)
-        button.setAccessibilityValue(recording ? (paused ? "Paused" : "Recording \(Meeting.timestamp(state.elapsed))") : working ? "Transcribing" : "Ready")
-        button.toolTip = recording ? "\(paused ? "Paused" : "Recording") · \(Meeting.timestamp(state.elapsed))" : working ? "Transcribing \(Int(state.engine.fraction * 100))%" : "Ultra Transcribe"
     }
 
     /// Transcription progress: the logo's waveform fills in from left to right.
@@ -231,6 +242,8 @@ final class GlassPanel: NSPanel {
         hasShadow = true
         level = .statusBar
         hidesOnDeactivate = false
+        // The panel never activates the app, so without this its help tags would never show.
+        allowsToolTipsWhenApplicationIsInactive = true
         isReleasedWhenClosed = false
         collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary, .transient, .ignoresCycle]
     }

@@ -62,7 +62,6 @@ struct SettingsView: View {
                     .padding(.horizontal, 8).frame(height: Theme.controlHeight)
                 }
                 .buttonStyle(RowStyle(selected: state.settingsPane == pane))
-                .focusEffectDisabled()
                 .accessibilityAddTraits(state.settingsPane == pane ? .isSelected : [])
             }
             Spacer()
@@ -119,7 +118,6 @@ struct SettingsToggle: View {
             SettingsRow(title: title, detail: detail) { SwitchKnob(isOn: isOn) }.contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .focusEffectDisabled()
         .accessibilityLabel(title)
         .accessibilityValue(isOn ? "On" : "Off")
         .accessibilityAddTraits(.isToggle)
@@ -188,39 +186,55 @@ struct RecordingSettings: View {
         default: return "Asks on first recording"
         }
     }
-    @State private var inputs: [AudioDevice] = []
-    var automatic: AudioDevice? { AudioDevice.microphone(preferred: nil, among: inputs, defaultID: AudioDevice.defaultDevice(input: true)) }
-    var chosen: AudioDevice? { inputs.first { $0.uid == state.preferences.microphone } }
+    @StateObject private var devices = InputDevices()
+    var chosen: AudioDevice? { devices.inputs.first { $0.uid == state.preferences.microphone } }
+    var automatic: AudioDevice? { devices.recording(preferred: nil) }
+    var recording: AudioDevice? { devices.recording(preferred: state.preferences.microphone) }
     var microphoneTitle: String {
         if let chosen { return chosen.name }
-        if state.preferences.microphone != nil { return "Not connected" }
-        return automatic.map { "Automatic · \($0.name)" } ?? "No microphone"
+        return automatic.map { "Automatic (\($0.name))" } ?? "No microphone"
+    }
+    var microphoneNote: String? {
+        let notes = [state.preferences.microphone != nil && chosen == nil ? "Chosen microphone not connected." : nil,
+                     recording?.isBluetooth == true ? "Bluetooth: your headset plays in call quality while you record." : nil].compactMap { $0 }
+        return notes.isEmpty ? nil : notes.joined(separator: " ")
+    }
+    var channelCount: Int { recording.flatMap { devices.channels[$0.uid] } ?? 0 }
+    /// The recorder applies a channel only to a chosen microphone; an automatic one records its first input.
+    var channel: Int {
+        guard chosen != nil, let channel = state.preferences.microphoneChannel, channel < channelCount else { return 0 }
+        return channel
     }
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             SettingsSection(title: "Record by default", footer: "Separate tracks let transcripts and AI notes tell who said what. Headphones keep colleagues out of your microphone.") {
                 SourcePicker(state: state).padding(12)
             }
-            SettingsSection(title: "Microphone", footer: "Automatic never opens a Bluetooth headset’s microphone, which would switch it to muffled call quality. Your Mac’s microphone records you instead.") {
-                SettingsRow(title: "Records You", detail: chosen?.isBluetooth == true ? "Bluetooth: your headset plays in call quality while you record." : nil) {
+            SettingsSection(title: "Microphone", footer: "Automatic avoids Bluetooth headsets, whose microphone switches them to muffled call quality, and uses another microphone when one is connected.") {
+                SettingsRow(title: "Records You", detail: microphoneNote) {
                     Menu {
-                        Button { state.preferences.microphone = nil } label: { choice(automatic.map { "Automatic (\($0.name))" } ?? "Automatic", on: state.preferences.microphone == nil) }
+                        Button { choose(nil) } label: { choice(automatic.map { "Automatic (\($0.name))" } ?? "Automatic", on: state.preferences.microphone == nil) }
                         Divider()
-                        ForEach(inputs) { device in
-                            Button { state.preferences.microphone = device.uid } label: { choice(device.isBluetooth ? "\(device.name) (call quality)" : device.name, on: state.preferences.microphone == device.uid) }
+                        ForEach(devices.inputs) { device in
+                            Button { choose(device.uid) } label: { choice(device.isBluetooth ? "\(device.name) (call quality)" : device.name, on: state.preferences.microphone == device.uid) }
                         }
-                    } label: {
-                        HStack(spacing: 6) {
-                            Image(systemName: "mic").font(.system(size: 10))
-                            Text(microphoneTitle)
-                            Image(systemName: "chevron.down").font(.system(size: 8, weight: .bold)).opacity(0.6)
-                        }
-                    }
+                    } label: { menuLabel(microphoneTitle, symbol: "mic") }
                     .menuStyle(.button).buttonStyle(ControlStyle(compact: true)).menuIndicator(.hidden).fixedSize()
-                    .help("Microphone that records you")
+                    .help("Microphone that records you: \(microphoneTitle)")
+                }
+                if channelCount > 1 {
+                    RowDivider()
+                    SettingsRow(title: "Input channel") {
+                        Menu {
+                            ForEach(0..<channelCount, id: \.self) { index in
+                                Button { chooseChannel(index) } label: { choice("Input \(index + 1)", on: index == channel) }
+                            }
+                        } label: { menuLabel("Input \(channel + 1)") }
+                        .menuStyle(.button).buttonStyle(ControlStyle(compact: true)).menuIndicator(.hidden).fixedSize()
+                        .help("The input of \(recording?.name ?? "the microphone") that records you")
+                    }
                 }
             }
-            .onAppear { inputs = AudioDevice.inputs() }
             SettingsSection(title: "Permissions") {
                 SettingsRow(title: "Microphone", detail: microphonePermission) {
                     Button("Open…") { openURL("x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone") }.buttonStyle(ControlStyle(compact: true))
@@ -230,6 +244,25 @@ struct RecordingSettings: View {
                     Button("Open…") { openURL("x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") }.buttonStyle(ControlStyle(compact: true))
                 }
             }
+        }
+        .modifier(FollowsDevices(devices: devices))
+    }
+    func choose(_ uid: String?) {
+        // Inputs differ between devices, so another microphone starts from its first input.
+        if uid != state.preferences.microphone { state.preferences.microphoneChannel = nil }
+        state.preferences.microphone = uid
+    }
+    /// An input belongs to a device, so choosing one for the automatic microphone also chooses that microphone.
+    func chooseChannel(_ index: Int) {
+        state.preferences.microphone = recording?.uid
+        state.preferences.microphoneChannel = index
+    }
+    func menuLabel(_ title: String, symbol: String? = nil) -> some View {
+        HStack(spacing: 6) {
+            if let symbol { Image(systemName: symbol).font(.system(size: 10)) }
+            // Long device names shorten in the middle, keeping the end that tells similar names apart.
+            Text(title).lineLimit(1).truncationMode(.middle).frame(maxWidth: 220)
+            Image(systemName: "chevron.down").font(.system(size: 8, weight: .bold)).opacity(0.6)
         }
     }
 }
@@ -306,17 +339,13 @@ struct SpeechModelList: View {
                         if selected { Circle().fill(Theme.orange).frame(width: 8, height: 8).transition(reduceMotion ? .identity : .scale) }
                     }
                     VStack(alignment: .leading, spacing: 3) {
-                        HStack(spacing: 8) {
+                        HStack(alignment: .firstTextBaseline, spacing: 8) {
                             Text(model.name).font(.system(size: 13, weight: selected ? .semibold : .regular))
-                            if model == recommended {
-                                Text("Recommended").font(.system(size: 9.5, weight: .semibold, design: .monospaced)).textCase(.uppercase)
-                                    .foregroundStyle(Theme.orange).padding(.horizontal, 5).padding(.vertical, 2)
-                                    .background(Theme.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: Theme.chipRadius, style: .continuous))
-                            }
+                            if model == recommended { MonoLabel("Recommended", color: Theme.orangeText) }
                         }
                         Text("\(model.maker) · \(Self.languageLine(model))").font(.system(size: 11.5)).foregroundStyle(Theme.secondary)
                         Text("\(model.size) download · \(String(format: "%.1f", model.memoryGB)) GB memory · 1 min in \(model.minuteSeconds) s")
-                            .font(.system(size: 11, design: .monospaced)).foregroundStyle(Theme.secondary.opacity(0.85))
+                            .font(.system(size: 11, design: .monospaced)).foregroundStyle(Theme.secondary)
                     }
                     Spacer(minLength: 8)
                 }
@@ -421,11 +450,21 @@ struct LanguageChips: View {
 
 struct StorageSettings: View {
     @ObservedObject var state: AppState
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// A retention that would delete audio as soon as it is saved, waiting for confirmation.
+    @State private var pending: (days: Int, meetings: Int)?
+    var retention: Binding<Int> {
+        Binding(get: { state.preferences.retentionDays }, set: { days in
+            guard days != state.preferences.retentionDays else { return }
+            let meetings = state.meetings.filter { !state.isProtected($0.id) && $0.audioExpired(after: days, now: Date()) }.count
+            if meetings > 0 { pending = (days, meetings) } else { state.preferences.retentionDays = days }
+        })
+    }
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             SettingsSection(title: "Audio", footer: "Only audio of transcribed meetings is deleted. Transcripts and notes are kept, and incomplete recordings are never removed.") {
                 SettingsRow(title: "Delete audio after") {
-                    Segmented(options: [(0, "Never"), (1, "1 d"), (7, "7 d"), (14, "14 d"), (30, "30 d"), (90, "90 d")], selection: $state.preferences.retentionDays)
+                    Segmented(options: [(0, "Never"), (1, "1 d"), (7, "7 d"), (14, "14 d"), (30, "30 d"), (90, "90 d")], selection: retention)
                 }
             }
             SettingsSection(title: "Library", footer: "Everything stays on this Mac. Use FileVault for encryption, and keep this folder out of cloud sync.") {
@@ -433,6 +472,16 @@ struct StorageSettings: View {
                     Button("Show in Finder") { NSWorkspace.shared.open(state.library.root) }.buttonStyle(ControlStyle(compact: true))
                 }
             }
+        }
+        .confirmationDialog(pending.map { "Delete the audio of \($0.meetings == 1 ? "1 meeting" : "\($0.meetings) meetings") now?" } ?? "Delete audio now?",
+                            isPresented: Binding(get: { pending != nil }, set: { if !$0 { pending = nil } })) {
+            Button("Delete Audio", role: .destructive) {
+                if let days = pending?.days { withAnimation(reduceMotion ? nil : Theme.selection) { state.preferences.retentionDays = days } }
+                pending = nil
+            }
+            Button("Cancel", role: .cancel) { pending = nil }
+        } message: {
+            Text("\(pending?.meetings == 1 ? "Its transcript and notes are" : "Their transcripts and notes are") kept. The audio moves to the Trash.")
         }
     }
 }

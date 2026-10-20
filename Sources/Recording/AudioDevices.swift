@@ -8,14 +8,25 @@ struct AudioDevice: Identifiable, Equatable {
     let transport: UInt32
     var isBluetooth: Bool { transport == kAudioDeviceTransportTypeBluetooth || transport == kAudioDeviceTransportTypeBluetoothLE }
     var isBuiltIn: Bool { transport == kAudioDeviceTransportTypeBuiltIn }
-    /// Whether the first input stream hands the recorder 32-bit float samples, Core Audio's usual format.
+    /// Virtual and combined devices (Zoom, Teams, BlackHole, aggregates) are used only when chosen or the default.
+    var isVirtual: Bool { transport == kAudioDeviceTransportTypeVirtual || transport == kAudioDeviceTransportTypeAggregate || transport == kAudioDeviceTransportTypeAutoAggregate }
+    /// Whether every input stream hands the recorder 32-bit float samples, Core Audio's usual format.
     var deliversFloat: Bool {
-        var address = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyStreams, mScope: kAudioObjectPropertyScopeInput, mElement: kAudioObjectPropertyElementMain)
-        var stream = AudioObjectID(0)
-        var size = UInt32(MemoryLayout<AudioObjectID>.size)
-        guard AudioObjectGetPropertyData(id, &address, 0, nil, &size, &stream) == noErr, stream != 0,
-              let format: AudioStreamBasicDescription = Self.value(stream, kAudioStreamPropertyVirtualFormat) else { return false }
-        return format.mFormatID == kAudioFormatLinearPCM && format.mFormatFlags & kAudioFormatFlagIsFloat != 0 && format.mBitsPerChannel == 32
+        let streams = Self.array(id, kAudioDevicePropertyStreams, scope: kAudioObjectPropertyScopeInput)
+        return !streams.isEmpty && streams.allSatisfy { stream in
+            guard let format: AudioStreamBasicDescription = Self.value(stream, kAudioStreamPropertyVirtualFormat) else { return false }
+            return format.mFormatID == kAudioFormatLinearPCM && format.mFormatFlags & kAudioFormatFlagIsFloat != 0 && format.mBitsPerChannel == 32
+        }
+    }
+    /// Input channels across all of the device's input streams; interfaces often have several.
+    var channelCount: Int {
+        var address = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyStreamConfiguration, mScope: kAudioObjectPropertyScopeInput, mElement: kAudioObjectPropertyElementMain)
+        var size = UInt32(0)
+        guard AudioObjectGetPropertyDataSize(id, &address, 0, nil, &size) == noErr, size > 0 else { return 0 }
+        let list = AudioBufferList.allocate(maximumBuffers: Int(size) / MemoryLayout<AudioBuffer>.stride + 1)
+        defer { free(list.unsafeMutablePointer) }
+        guard AudioObjectGetPropertyData(id, &address, 0, nil, &size, list.unsafeMutablePointer) == noErr else { return 0 }
+        return list.reduce(0) { $0 + Int($1.mNumberChannels) }
     }
 
     /// Every device with an input, in Core Audio's order.
@@ -37,14 +48,18 @@ struct AudioDevice: Identifiable, Equatable {
         return AudioDevice(id: id, uid: uid, name: string(id, kAudioObjectPropertyName) ?? uid, transport: value(id, kAudioDevicePropertyTransportType) ?? 0)
     }
 
-    /// The microphone to record. A chosen device wins while it is connected. Otherwise the default input, except a
-    /// Bluetooth headset: opening its microphone switches it to call quality (narrow, compressed sound for everything
-    /// it plays), so the built-in microphone records instead and the headset keeps playing in full quality.
+    /// The microphone to record. A chosen device wins while it is connected. Otherwise the default input, unless it
+    /// is a Bluetooth headset: opening its microphone switches it to call quality (narrow, compressed sound for
+    /// everything it plays), so the built-in microphone records instead, or another wired or USB one. A headset is
+    /// used only when it is the only microphone.
     static func microphone(preferred uid: String?, among inputs: [AudioDevice], defaultID: AudioObjectID?) -> AudioDevice? {
         if let uid, let chosen = inputs.first(where: { $0.uid == uid }) { return chosen }
-        let fallback = inputs.first { $0.id == defaultID } ?? inputs.first
-        guard let fallback, fallback.isBluetooth else { return fallback }
-        return inputs.first(where: \.isBuiltIn) ?? fallback
+        let standard = inputs.first { $0.id == defaultID }
+        if let standard, !standard.isBluetooth { return standard }
+        return inputs.first(where: \.isBuiltIn)
+            ?? inputs.first { !$0.isBluetooth && !$0.isVirtual }
+            ?? standard
+            ?? inputs.first
     }
     static func microphone(preferred uid: String?) -> AudioDevice? {
         microphone(preferred: uid, among: inputs(), defaultID: defaultDevice(input: true))
@@ -68,8 +83,8 @@ struct AudioDevice: Identifiable, Equatable {
         guard AudioObjectGetPropertyData(object, &address, 0, nil, &size, &text) == noErr, let text else { return nil }
         return text.takeRetainedValue() as String
     }
-    private static func array(_ object: AudioObjectID, _ selector: AudioObjectPropertySelector) -> [AudioObjectID] {
-        var address = address(selector)
+    private static func array(_ object: AudioObjectID, _ selector: AudioObjectPropertySelector, scope: AudioObjectPropertyScope = kAudioObjectPropertyScopeGlobal) -> [AudioObjectID] {
+        var address = AudioObjectPropertyAddress(mSelector: selector, mScope: scope, mElement: kAudioObjectPropertyElementMain)
         var size = UInt32(0)
         guard AudioObjectGetPropertyDataSize(object, &address, 0, nil, &size) == noErr, size > 0 else { return [] }
         var ids = [AudioObjectID](repeating: 0, count: Int(size) / MemoryLayout<AudioObjectID>.size)

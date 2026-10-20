@@ -54,7 +54,6 @@ struct AnalysisSettings: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .focusEffectDisabled()
             .accessibilityLabel("Use \(template.name)")
             .accessibilityAddTraits(selected ? .isSelected : [])
             Button("Edit") { editing = template }.buttonStyle(ControlStyle(kind: .quiet, compact: true))
@@ -106,7 +105,7 @@ struct OpenRouterKeyField: View {
         case .checking: HStack(spacing: 6) { DotProgress(value: nil, dots: 10).frame(width: 50, height: 5); Text("Checking with OpenRouter…").font(.system(size: 11.5)).foregroundStyle(Theme.secondary) }
         case .valid(let detail):
             HStack(spacing: 8) {
-                Label(detail, systemImage: "checkmark.circle.fill").font(.system(size: 11.5)).foregroundStyle(Theme.you).lineLimit(1)
+                Label(detail, systemImage: "checkmark.circle.fill").font(.system(size: 11.5)).foregroundStyle(Theme.youText).lineLimit(1)
                 Button("Remove", role: .destructive) { remove() }.buttonStyle(ControlStyle(kind: .quiet, compact: true))
             }
         case .invalid(let message): Label(message, systemImage: "xmark.circle.fill").font(.system(size: 11.5)).foregroundStyle(Theme.destructive).lineLimit(2)
@@ -187,7 +186,6 @@ struct ModelCatalog: View {
                             .padding(.vertical, 4).contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
-                        .focusEffectDisabled()
                         .listRowBackground(Color.clear.thinScrollbars())
                     }
                     .listStyle(.inset)
@@ -274,5 +272,5 @@ struct TemplateEditor: View {
 }
 
 private func caption(_ text: String) -> some View {
-    Text(text).font(.caption).foregroundStyle(Theme.secondary).fixedSize(horizontal: false, vertical: true)
+    Text(text).font(.system(size: 11.5)).foregroundStyle(Theme.secondary).fixedSize(horizontal: false, vertical: true)
 }

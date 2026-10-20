@@ -177,7 +177,7 @@ enum UpdateInstaller {
             throw AppError.message("The download isn’t Ultra Transcribe.")
         }
         guard let team = teamIdentifier(current) else { throw AppError.message("This copy isn’t signed by a developer team, so the download can’t be verified.") }
-        guard teamIdentifier(candidate) == team, isValid(candidate) else { throw AppError.message("The download’s signature doesn’t match this app.") }
+        guard teamIdentifier(candidate) == team, let identifier = installed.bundleIdentifier, isValid(candidate, identifier: identifier, team: team) else { throw AppError.message("The download’s signature doesn’t match this app.") }
         guard let newVersion = (new.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String).flatMap(SemanticVersion.init),
               let oldVersion = (installed.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String).flatMap(SemanticVersion.init),
               newVersion > oldVersion else { throw AppError.message("The download isn’t newer than this version.") }
@@ -211,9 +211,14 @@ enum UpdateInstaller {
         return (information as? [String: Any])?[kSecCodeInfoTeamIdentifier as String] as? String
     }
 
-    static func isValid(_ url: URL) -> Bool {
+    /// Intact and signed by Apple-issued certificates for this team and app. The requirement matters: a signature
+    /// can be valid while self-signed, with team metadata copied from ours.
+    static func isValid(_ url: URL, identifier: String, team: String) -> Bool {
         var code: SecStaticCode?
-        guard SecStaticCodeCreateWithPath(url as CFURL, [], &code) == errSecSuccess, let code else { return false }
-        return SecStaticCodeCheckValidity(code, SecCSFlags(rawValue: kSecCSCheckAllArchitectures | kSecCSStrictValidate | kSecCSCheckNestedCode), nil) == errSecSuccess
+        var requirement: SecRequirement?
+        let rule = "anchor apple generic and identifier \"\(identifier)\" and certificate leaf[subject.OU] = \"\(team)\""
+        guard SecStaticCodeCreateWithPath(url as CFURL, [], &code) == errSecSuccess, let code,
+              SecRequirementCreateWithString(rule as CFString, [], &requirement) == errSecSuccess, let requirement else { return false }
+        return SecStaticCodeCheckValidity(code, SecCSFlags(rawValue: kSecCSCheckAllArchitectures | kSecCSStrictValidate | kSecCSCheckNestedCode), requirement) == errSecSuccess
     }
 }

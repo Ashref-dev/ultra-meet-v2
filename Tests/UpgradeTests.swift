@@ -208,6 +208,10 @@ final class UpgradeTests: XCTestCase {
         XCTAssertEqual(AudioDevice.microphone(preferred: nil, among: inputs, defaultID: 3), usb, "other default inputs are used as they are")
         XCTAssertEqual(AudioDevice.microphone(preferred: "airpods", among: inputs, defaultID: 1), airPods, "a microphone chosen in Settings wins")
         XCTAssertEqual(AudioDevice.microphone(preferred: "gone", among: inputs, defaultID: 2), builtIn, "a disconnected choice falls back to automatic")
+        XCTAssertEqual(AudioDevice.microphone(preferred: nil, among: [airPods, usb], defaultID: 2), usb, "a desktop without a built-in microphone uses its USB microphone, not the headset")
+        let zoom = AudioDevice(id: 4, uid: "zoom", name: "ZoomAudioDevice", transport: kAudioDeviceTransportTypeVirtual)
+        XCTAssertEqual(AudioDevice.microphone(preferred: nil, among: [airPods, zoom], defaultID: 2), airPods, "virtual devices are never picked automatically")
+        XCTAssertEqual(AudioDevice.microphone(preferred: nil, among: [zoom, usb], defaultID: 4), zoom, "a virtual default chosen in System Settings is respected")
         XCTAssertEqual(AudioDevice.microphone(preferred: nil, among: [airPods], defaultID: 2), airPods, "a headset is used when it is the only microphone")
         XCTAssertNil(AudioDevice.microphone(preferred: nil, among: [], defaultID: nil))
     }
@@ -253,5 +257,45 @@ final class UpgradeTests: XCTestCase {
         var preferences = Preferences()
         preferences.microphone = "usb"
         XCTAssertEqual(try JSONDecoder().decode(Preferences.self, from: JSONEncoder().encode(preferences)).microphone, "usb")
+    }
+
+    func testCaptureFindsTheChosenChannelAcrossStreams() throws {
+        let list = AudioBufferList.allocate(maximumBuffers: 2)
+        defer { free(list.unsafeMutablePointer) }
+        var first: [Float] = [0, 0], second: [Float] = [0, 0, 0, 0]
+        first.withUnsafeMutableBytes { one in
+            second.withUnsafeMutableBytes { two in
+                list[0] = AudioBuffer(mNumberChannels: 1, mDataByteSize: UInt32(one.count), mData: one.baseAddress)
+                list[1] = AudioBuffer(mNumberChannels: 2, mDataByteSize: UInt32(two.count), mData: two.baseAddress)
+                XCTAssertEqual(AudioCapture.locate(channel: 0, in: list, fromLast: false).map { ($0.0.mNumberChannels, $0.1) }?.1, 0)
+                let input2 = AudioCapture.locate(channel: 1, in: list, fromLast: false)
+                XCTAssertEqual(input2?.0.mNumberChannels, 2, "input 2 is the first channel of the second, stereo stream")
+                XCTAssertEqual(input2?.1, 0)
+                XCTAssertEqual(AudioCapture.locate(channel: 2, in: list, fromLast: false)?.1, 1)
+                XCTAssertEqual(AudioCapture.locate(channel: 9, in: list, fromLast: false)?.0.mNumberChannels, 1, "a channel that no longer exists falls back to input 1")
+                XCTAssertEqual(AudioCapture.locate(channel: 0, in: list, fromLast: true)?.0.mNumberChannels, 2, "Mac audio's tap is the last stream")
+            }
+        }
+    }
+
+    func testArchiveRetiresTheOriginalLeftBesideAVerifiedCopy() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let format = try XCTUnwrap(AVAudioFormat(standardFormatWithSampleRate: 48000, channels: 1))
+        let buffer = try XCTUnwrap(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 48000))
+        buffer.frameLength = buffer.frameCapacity
+        for index in 0..<Int(buffer.frameLength) { buffer.floatChannelData?[0][index] = 0.2 * sin(Float(index) * 0.03) }
+        let integer: [String: Any] = [AVFormatIDKey: kAudioFormatLinearPCM, AVSampleRateKey: 48000, AVNumberOfChannelsKey: 1, AVLinearPCMBitDepthKey: 16, AVLinearPCMIsFloatKey: false]
+        let original = folder.appendingPathComponent("system.caf")
+        do { try AVAudioFile(forWriting: original, settings: integer, commonFormat: .pcmFormatFloat32, interleaved: false).write(from: buffer) }
+        let backup = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".caf")
+        defer { try? FileManager.default.removeItem(at: backup) }
+        try FileManager.default.copyItem(at: original, to: backup)
+        try AudioArchive.compact(folder: folder)
+        try FileManager.default.copyItem(at: backup, to: original) // as if the app quit before removing the original
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: folder.path).sorted(), ["system.caf", "system.flac"])
+        try AudioArchive.compact(folder: folder)
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: folder.path), ["system.flac"], "the original that matches its copy is retired")
     }
 }

@@ -155,7 +155,17 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, UNUserNotifica
         defaults.set(!defaults.bool(forKey: "sidebarCollapsed"), forKey: "sidebarCollapsed")
     }
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        guard !quitting, state.activeID != nil || state.isWorking || state.starting || state.analyzingID != nil else { return .terminateNow }
+        guard !quitting else { return .terminateCancel } // already saving and quitting; that finishes on its own
+        guard state.activeID != nil || state.isWorking || state.starting || state.analyzingID != nil else {
+            guard state.operationTask != nil else { return .terminateNow }
+            // Background work such as audio compression stops cleanly first, so no files are left half swapped.
+            quitting = true
+            Task {
+                await state.prepareToQuit()
+                NSApp.reply(toApplicationShouldTerminate: true)
+            }
+            return .terminateLater
+        }
         let alert = NSAlert()
         alert.messageText = state.activeID != nil ? "A meeting is still recording" : "A meeting is still being processed"
         alert.informativeText = "Quitting stops it. Audio and finished transcripts stay on this Mac, so you can transcribe again later."

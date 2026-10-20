@@ -90,4 +90,21 @@ final class ReviewRegressionTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: audio.path))
         XCTAssertFalse(state.meetings[0].audioDeleted)
     }
+
+    func testRecoveryNeverReplacesCorrectionsWithAnEarlierRunsTranscript() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let library = try MeetingLibrary(root: root)
+        var meeting = Meeting(title: "Transcribe again, then quit")
+        meeting.segments = [TranscriptSegment(start: 0, end: 2, text: "Corrected by hand", source: "microphone")]
+        meeting.status = .processing
+        try library.save(meeting)
+        let old = library.folder(meeting.id).appendingPathComponent("transcript.json")
+        try JSONEncoder().encode(["segments": [TranscriptSegment(start: 0, end: 2, text: "Earlier run", source: "microphone")]]).write(to: old)
+        try FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSinceNow: -3600)], ofItemAtPath: old.path)
+        XCTAssertEqual(library.recover(meeting).segments.map(\.text), ["Corrected by hand"])
+
+        try FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSinceNow: 60)], ofItemAtPath: old.path)
+        XCTAssertEqual(library.recover(meeting).segments.map(\.text), ["Earlier run"], "output written after the meeting was saved is the interrupted run's and is kept")
+    }
 }

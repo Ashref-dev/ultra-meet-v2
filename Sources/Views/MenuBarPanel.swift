@@ -19,7 +19,7 @@ struct MenuBarPanel: View {
             .padding(.horizontal, 12)
             .transition(.opacity.combined(with: .scale(scale: 0.98)))
             if let error = state.error {
-                InlineHint(symbol: "exclamationmark.circle.fill", text: error, dismiss: { state.error = nil })
+                InlineHint(error: error, openSettings: state.showSettings) { state.error = nil }
                     .padding(.horizontal, 12).padding(.top, 8)
             }
             if let release = state.updater.available, !recording {
@@ -47,7 +47,7 @@ struct MenuBarPanel: View {
                 HStack(spacing: 6) {
                     Circle().fill(state.recorder.paused ? Theme.secondary : Theme.orange).frame(width: 6, height: 6)
                         .opacity(state.recorder.paused || reduceMotion || pulse ? 1 : 0.35)
-                    MonoLabel(state.recorder.paused ? "Paused" : "Rec", color: state.recorder.paused ? Theme.secondary : Theme.orange)
+                    MonoLabel(state.recorder.paused ? "Paused" : "Rec", color: state.recorder.paused ? nil : Theme.orangeText)
                 }
                 .onAppear {
                     guard !reduceMotion else { pulse = true; return }
@@ -104,7 +104,7 @@ private struct ReadyCard: View {
                 Button { state.showSettings(.transcription) } label: {
                     Label("Install the speech model to get transcripts", systemImage: "arrow.down.circle").font(.system(size: 11.5))
                 }
-                .buttonStyle(PressStyle()).foregroundStyle(Theme.orange)
+                .buttonStyle(TextLinkStyle())
             }
         }
     }
@@ -125,7 +125,7 @@ private struct LiveCard: View {
             }
             MonoLabel("Started \(meeting.createdAt.formatted(.dateTime.hour().minute())) · \(meeting.createdAt.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated)))")
             TalkShare(meter: meter, source: meeting.source)
-            HealthHints(meter: meter, source: meeting.source)
+            HealthHints(meter: meter, source: meeting.source) { state.showSettings(.recording) }
             if state.liveID == meeting.id { LiveLines(lines: state.engine.partial) }
             NoteEditor(text: Binding(get: { meeting.notes }, set: { value in state.update(meeting.id) { $0.notes = value } }), placeholder: "Jot a note…")
                 .frame(height: 96)
@@ -170,11 +170,11 @@ private struct TalkShare: View {
             .frame(height: 5)
             .animation(reduceMotion ? nil : .easeOut(duration: 0.4), value: share)
             HStack {
-                MonoLabel(share.map { "You \(Int(($0 * 100).rounded()))%" } ?? (source.usesMicrophone ? "You" : "You · off"), color: Theme.you)
+                MonoLabel(share.map { "You \(Int(($0 * 100).rounded()))%" } ?? (source.usesMicrophone ? "You" : "You · off"), color: Theme.youText)
                 Spacer()
-                MonoLabel("Talk time", color: Theme.secondary.opacity(0.7))
+                MonoLabel("Talk time")
                 Spacer()
-                MonoLabel(share.map { "\(Int(((1 - $0) * 100).rounded()))% Colleagues" } ?? (source.usesSystemAudio ? "Colleagues" : "Colleagues · off"), color: Theme.colleagues)
+                MonoLabel(share.map { "\(Int(((1 - $0) * 100).rounded()))% Colleagues" } ?? (source.usesSystemAudio ? "Colleagues" : "Colleagues · off"), color: Theme.colleaguesText)
             }
         }
         .accessibilityElement(children: .combine)
@@ -187,7 +187,7 @@ private struct LiveLines: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            MonoLabel("Live transcript", color: Theme.secondary.opacity(0.8))
+            MonoLabel("Live transcript")
             if lines.isEmpty {
                 Text("Lines appear as people finish sentences.").font(.system(size: 12)).foregroundStyle(Theme.secondary)
             }
@@ -210,14 +210,12 @@ private struct LiveLines: View {
 private struct HealthHints: View {
     @ObservedObject var meter: LevelMeter
     let source: AudioSource
+    let chooseMicrophone: () -> Void
     var body: some View {
         if source.usesMicrophone && meter.youSilence >= 10 {
-            InlineHint(symbol: "mic.slash", text: "Your microphone isn’t picking up any sound.", action: ("Sound…", { openSound() }))
+            InlineHint(symbol: "mic.slash", text: "Your microphone isn’t picking up any sound.", action: ("Choose Microphone", chooseMicrophone))
         } else if source.usesSystemAudio && meter.colleaguesSilence >= 60 {
             InlineHint(symbol: "speaker.slash", text: "No sound from your Mac for a minute. If you’re on a call, check that it plays on this Mac.")
         }
-    }
-    func openSound() {
-        if let url = URL(string: "x-apple.systempreferences:com.apple.Sound-Settings.extension") { NSWorkspace.shared.open(url) }
     }
 }

@@ -2,13 +2,23 @@ import Foundation
 
 struct MeetingLibrary {
     let root: URL
+    /// The real library moves deleted audio to the Trash; tests, which use a temporary root, delete it directly.
+    private let usesTrash: Bool
     init(root: URL? = nil) throws {
+        usesTrash = root == nil
         self.root = root ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("UltraTranscribe", isDirectory: true)
         try FileManager.default.createDirectory(at: self.root, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: self.root.path)
         try FileManager.default.createDirectory(at: self.root.appendingPathComponent("Meetings"), withIntermediateDirectories: true)
     }
     func folder(_ id: UUID) -> URL { root.appendingPathComponent("Meetings/\(id.uuidString)") }
+    /// Setup's microphone and Mac audio checks record here, inside the private library, never in shared temp space.
+    var scratch: URL { root.appendingPathComponent("Scratch", isDirectory: true) }
+    /// Check recordings left by a crash or force quit are deleted at launch.
+    func clearScratch() {
+        try? FileManager.default.removeItem(at: scratch)
+        try? FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+    }
     func save(_ meeting: Meeting) throws {
         let directory = folder(meeting.id)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -35,11 +45,15 @@ struct MeetingLibrary {
         }
         return LibrarySnapshot(meetings: meetings.sorted { $0.createdAt > $1.createdAt }, warnings: warnings)
     }
+    static let audioExtensions: Set<String> = ["wav", "caf", "m4a", "mp3", "flac", "aiff", "ogg"]
+    /// Moves a meeting's audio to the Trash, where it can be recovered; transcript and notes stay.
     func removeAudio(_ id: UUID) throws {
-        let directory = folder(id)
-        for file in try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil) where ["wav", "caf", "m4a", "mp3", "flac", "aiff", "ogg"].contains(file.pathExtension.lowercased()) {
-            try FileManager.default.removeItem(at: file)
+        for file in try FileManager.default.contentsOfDirectory(at: folder(id), includingPropertiesForKeys: nil) where Self.audioExtensions.contains(file.pathExtension.lowercased()) {
+            if usesTrash { try FileManager.default.trashItem(at: file, resultingItemURL: nil) } else { try FileManager.default.removeItem(at: file) }
         }
+    }
+    func hasUncompressedAudio(_ id: UUID) -> Bool {
+        ((try? FileManager.default.contentsOfDirectory(atPath: folder(id).path)) ?? []).contains { ["wav", "caf", "aiff"].contains(($0 as NSString).pathExtension.lowercased()) }
     }
     func savePreferences(_ preferences: Preferences) throws {
         try JSONEncoder().encode(preferences).write(to: root.appendingPathComponent("preferences.json"), options: .atomic)

@@ -24,7 +24,7 @@ struct NoteEditor: View {
             )
             .overlay(alignment: .topLeading) {
                 if text.isEmpty {
-                    Text(placeholder).font(.system(size: fontSize)).foregroundStyle(Theme.secondary.opacity(0.7))
+                    Text(placeholder).font(.system(size: fontSize)).foregroundStyle(Theme.secondary)
                         .padding(.leading, inset.width + 5).padding(.top, inset.height).allowsHitTesting(false)
                 }
             }

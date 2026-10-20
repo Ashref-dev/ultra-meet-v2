@@ -46,7 +46,9 @@ final class AppState: ObservableObject {
     @Published var renamedID: UUID?
     @Published var settingsPane: SettingsPane = .general
     @Published var queued: [UUID] = []
-    @Published var elapsed: Double = 0
+    /// The meeting whose audio is being compressed; its files are off limits until that finishes.
+    var compactingID: UUID?
+    let clock = ElapsedClock()
     @Published var error: String?
     @Published var search = ""
     @Published var starting = false
@@ -73,7 +75,10 @@ final class AppState: ObservableObject {
     var selected: Meeting? { meetings.first { $0.id == selectedID } }
     var isWorking: Bool { processingID != nil || engine.busy || !queued.isEmpty }
     var canStart: Bool { activeID == nil && !starting && startupTask == nil && !preparingToQuit }
-    func isProtected(_ id: UUID) -> Bool { id == activeID || id == processingID || id == liveID || id == pendingID || queued.contains(id) }
+    func isProtected(_ id: UUID) -> Bool {
+        id == activeID || id == processingID || id == liveID || id == pendingID || id == compactingID || queued.contains(id)
+            || (redoingLineID != nil && meetings.first(where: { $0.id == id })?.segments.contains(where: { $0.id == redoingLineID }) == true)
+    }
 
     init(root: URL? = nil) throws {
         library = try MeetingLibrary(root: root)
@@ -82,6 +87,7 @@ final class AppState: ObservableObject {
         meetings = snapshot.meetings
         error = snapshot.warnings.isEmpty ? nil : snapshot.warnings.joined(separator: "\n\n")
         engine = LocalEngine(root: library.root)
+        library.clearScratch()
         for index in meetings.indices where [.importing, .recording, .processing].contains(meetings[index].status) {
             meetings[index] = library.recover(meetings[index])
             try library.save(meetings[index])
@@ -220,4 +226,11 @@ final class AppState: ObservableObject {
             }
         } catch { self.error = error.localizedDescription }
     }
+}
+
+/// Seconds recorded so far. It ticks twice a second, so it lives outside `AppState`: only the views that show the
+/// time redraw, not every view observing the app.
+@MainActor
+final class ElapsedClock: ObservableObject {
+    @Published var seconds: Double = 0
 }
