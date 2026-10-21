@@ -29,6 +29,7 @@ Updates: Settings → Credits checks for new releases and installs them in place
 - **Stop** saves the audio, finishes the transcript and opens the meeting. A conversation map shows when each side spoke; click it or any timestamp to play both sides together, at up to 2×, with the current line highlighted. Lines are grouped into speaker turns, labeled by language in mixed-language meetings, and right-to-left languages align correctly. Click a line to play it, double-click to fix a typo. Unsure lines are underlined; right-click a line to transcribe it again as another language. Corrections offer to add new names to Names and terms.
 - **Trim a meeting:** drag the orange handles on the conversation map, or right-click a line and choose Start Meeting Here or End Meeting Here. The cut part is left out of the transcript, playback, AI notes, export and copy. Nothing is deleted; Restore brings it back.
 - **Trash a meeting:** swipe left on its library row to reveal the round Trash button, then click and confirm. The meeting and its audio move to the Finder Trash for recovery. Recording and processing meetings cannot be trashed.
+- **Versus mode (experimental):** a meeting's **Versus** tab (EXP) compares speech models on that meeting. Choose downloaded models; each transcribes the meeting on this Mac, one after another, then the transcripts sit side by side, one row per stretch of speech, with the words only one model heard marked. Each model shows its lines, words, unsure and missed lines and how long it took. Show only the lines where they differ, click a line to hear it, copy the comparison, or use a model for new meetings. The meeting's own transcript never changes; recordings and transcriptions always go first.
 - **AI notes → Analyze with AI** produces a summary, discussion, decisions, action items for you and for your colleagues, and open questions. The model also gets talk time per side, the languages heard, your typed notes and which lines were unclear. Automatically named meetings get a descriptive title.
 
 | Shortcut | Action |
@@ -42,7 +43,7 @@ Updates: Settings → Credits checks for new releases and installs them in place
 | ↑ ↓ | Previous or next meeting in the library |
 | ⌫ | Move the selected meeting to the Trash, after confirming |
 | Space | Play or pause the open meeting's audio (never starts or stops a recording) |
-| ⌘1, ⌘2, ⌘3 | Transcript, AI notes, My notes |
+| ⌘1, ⌘2, ⌘3, ⌘4 | Transcript, AI notes, My notes, Versus |
 | ⌘⇧C | Copy the open tab |
 | ⌘⇧E | Export as Markdown |
 | ⌃⌘S | Toggle sidebar |

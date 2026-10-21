@@ -118,8 +118,9 @@ extension AppState {
         operationTask = Task {
             defer {
                 operationTask = nil
-                // Also after a cancel: meetings queued while it unwound would otherwise wait for the next event.
-                if !queued.isEmpty && !preparingToQuit { drainQueue() }
+                // Also after a cancel: meetings queued while it unwound would otherwise wait for the next event. A Versus
+                // comparison only runs when nothing else is waiting.
+                if !queued.isEmpty && !preparingToQuit { drainQueue() } else { continueVersus() }
             }
             guard !Task.isCancelled else { return }
             await work()

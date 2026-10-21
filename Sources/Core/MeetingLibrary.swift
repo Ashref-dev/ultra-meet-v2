@@ -49,8 +49,12 @@ struct MeetingLibrary {
     /// Moves a meeting's audio to the Trash, where it can be recovered; transcript and notes stay.
     func removeAudio(_ id: UUID) throws {
         for file in try FileManager.default.contentsOfDirectory(at: folder(id), includingPropertiesForKeys: nil) where Self.audioExtensions.contains(file.pathExtension.lowercased()) {
-            if usesTrash { try FileManager.default.trashItem(at: file, resultingItemURL: nil) } else { try FileManager.default.removeItem(at: file) }
+            try discard(file)
         }
+    }
+    /// Moves a file the user may want back to the Trash; test libraries delete it.
+    func discard(_ url: URL) throws {
+        if usesTrash { try FileManager.default.trashItem(at: url, resultingItemURL: nil) } else { try FileManager.default.removeItem(at: url) }
     }
     func hasUncompressedAudio(_ id: UUID) -> Bool {
         ((try? FileManager.default.contentsOfDirectory(atPath: folder(id).path)) ?? []).contains { ["wav", "caf", "aiff"].contains(($0 as NSString).pathExtension.lowercased()) }

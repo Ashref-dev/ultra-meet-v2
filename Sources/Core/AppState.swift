@@ -46,6 +46,10 @@ final class AppState: ObservableObject {
     @Published var renamedID: UUID?
     @Published var settingsPane: SettingsPane = .general
     @Published var queued: [UUID] = []
+    /// Versus mode: models still to transcribe a meeting for comparison (see `compare`).
+    @Published var versus: VersusJob?
+    /// Bumped when a comparison run is saved or removed, so views reload runs from disk.
+    @Published var versusRevision = 0
     /// The meeting whose audio is being compressed; its files are off limits until that finishes.
     var compactingID: UUID?
     let clock = ElapsedClock()
@@ -77,6 +81,7 @@ final class AppState: ObservableObject {
     var canStart: Bool { activeID == nil && !starting && startupTask == nil && !preparingToQuit }
     func isProtected(_ id: UUID) -> Bool {
         id == activeID || id == processingID || id == liveID || id == pendingID || id == compactingID || queued.contains(id)
+            || (versus?.meetingID == id && versus?.isRunning == true)
             || (redoingLineID != nil && meetings.first(where: { $0.id == id })?.segments.contains(where: { $0.id == redoingLineID }) == true)
     }
 

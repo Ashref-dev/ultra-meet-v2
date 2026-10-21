@@ -23,6 +23,7 @@ extension AppState {
     func transcribe(_ id: UUID) {
         guard !queued.contains(id), processingID != id else { return }
         queued.append(id)
+        yieldVersus() // the stopped comparison's operation drains the queue as it ends
         drainQueue()
     }
     func drainQueue() {
@@ -56,9 +57,11 @@ extension AppState {
             Task { @MainActor [weak self] in self?.compactLibrary() } // runs after this operation has released the slot
         }
     }
-    /// Stops background compression for a recording, then starts live transcription once the slot is free.
+    /// Stops background compression or a Versus comparison for a recording, then starts live transcription once the
+    /// slot is free. The comparison's model goes back to the front of the line and runs again after the meeting.
     func yieldMaintenance(for id: UUID) {
-        guard compactingID != nil, let operationTask else { return }
+        guard compactingID != nil || versus?.current != nil, let operationTask else { return }
+        yieldVersus()
         operationTask.cancel()
         Task { @MainActor [weak self] in
             await operationTask.value
@@ -117,10 +120,10 @@ extension AppState {
             }
         }
     }
-    func notifyReady(_ id: UUID) {
+    func notifyReady(_ id: UUID, title: String = "Transcript ready", body: String = "Your meeting is transcribed. Click to open it.") {
         guard preferences.notifyWhenReady, Notifier.available, NSApp?.isActive == false, let meeting = meetings.first(where: { $0.id == id }), !meeting.keptSegments.isEmpty else { return }
-        // The title stays out of the notification: it can show on the lock screen and may name something confidential.
-        Notifier.post(id: id.uuidString, title: "Transcript ready", body: "Your meeting is transcribed. Click to open it.", info: ["meeting": id.uuidString])
+        // The meeting's title stays out of the notification: it can show on the lock screen and may name something confidential.
+        Notifier.post(id: id.uuidString, title: title, body: body, info: ["meeting": id.uuidString])
     }
     /// Transcribes one line again, as the given language or detecting it.
     func retranscribe(_ id: UUID, line: TranscriptSegment, as language: String?) {

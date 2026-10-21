@@ -198,7 +198,23 @@ struct Shake: GeometryEffect {
     }
 }
 
-struct TabItem: Identifiable, Hashable { let id: String; let symbol: String }
+struct TabItem: Identifiable, Hashable {
+    let id: String
+    let symbol: String
+    var experimental = false
+}
+
+/// Marks an experimental feature, such as Versus mode: it works, but may change or go away.
+struct ExperimentalBadge: View {
+    var body: some View {
+        Text("EXP").font(.system(size: 8.5, weight: .bold, design: .monospaced)).tracking(0.6)
+            .foregroundStyle(Theme.orangeText)
+            .padding(.horizontal, 4).padding(.vertical, 1.5)
+            .overlay(RoundedRectangle(cornerRadius: Theme.chipRadius, style: .continuous).strokeBorder(Theme.orange.opacity(0.5)))
+            .help("Experimental: it may change or go away in a later version")
+            .accessibilityLabel("Experimental")
+    }
+}
 
 /// Content tabs with a sliding orange selection.
 struct TabStrip: View {
@@ -213,6 +229,7 @@ struct TabStrip: View {
                     HStack(spacing: 6) {
                         Image(systemName: tab.symbol).font(.system(size: 11, weight: .semibold))
                         Text(tab.id).font(.system(size: 12.5, weight: selection == tab.id ? .semibold : .medium))
+                        if tab.experimental { ExperimentalBadge() }
                     }
                     .foregroundStyle(selection == tab.id ? Theme.orangeText : Theme.secondary)
                     .padding(.horizontal, 12)
@@ -228,7 +245,7 @@ struct TabStrip: View {
                 }
                 .buttonStyle(PressStyle())
                 .keyboardShortcut(KeyEquivalent(Character(String(index + 1))), modifiers: .command)
-                .help("\(tab.id) (⌘\(index + 1))")
+                .help("\(tab.id)\(tab.experimental ? ", experimental" : "") (⌘\(index + 1))")
                 .accessibilityAddTraits(selection == tab.id ? [.isSelected, .isButton] : .isButton)
             }
             Spacer(minLength: 0)

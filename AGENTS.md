@@ -29,10 +29,10 @@ These are part of every change, planned up front and reviewed like features:
 |---|---|
 | `Sources/UltraTranscribeApp.swift` | App delegate, window routing, quit flow |
 | `Sources/StatusBarController.swift` | Status item, popover, right-click `NSMenu`, animated icon |
-| `Sources/Core/` | `AppState` (single source of UI state), recording lifecycle, processing queue and analysis, models, persistence, Keychain |
+| `Sources/Core/` | `AppState` (single source of UI state), recording lifecycle, processing queue and analysis, models, persistence, Keychain, `Versus` (experimental model comparison: runs, scheduling, alignment) |
 | `Sources/Recording/` | `AudioCapture` (mic and Mac audio through Core Audio, shared timeline, device following), `AudioDevices` (microphone rule: never a Bluetooth headset automatically), `AudioArchive` (verified FLAC after transcription), level meter, playback, import |
 | `Sources/Services/` | `LocalEngine` (worker subprocess, live follow mode, single-line redo), `OpenRouter` (validate, catalog, analyze, title parsing), `Updater` (GitHub Releases, verified install), `Notifier`, `GlobalHotKey` |
-| `Sources/Views/` | `Theme` (tokens), `LogoGlyph` (the logo), `Components` (shared controls), `TranscriptViews` (transcript lines, conversation map, hints), `SetupView` (first run), screens |
+| `Sources/Views/` | `Theme` (tokens), `LogoGlyph` (the logo), `Components` (shared controls), `TranscriptViews` (transcript lines, conversation map, hints), `SetupView` (first run), `VersusView` (comparison picker and side-by-side grid), screens |
 | `Sources/Resources/worker.py` | Transcription pipeline (typed with basedpyright, linted with ruff) |
 | `scripts/build.sh` | Release build, bundle, sign; `scripts/icon/generate.sh` regenerates the app icon from `LogoGlyph.swift` |
 | `scripts/eval/eval.py` | Recognition regression set (synthetic EN/FR/AR meeting with known text), scorer, and a real-time replay to test live mode |

@@ -677,11 +677,16 @@ def transcribe(
     languages: Annotated[str, typer.Option(help="Comma-separated languages people speak; empty detects any.")] = "",
     vocabulary: Annotated[str, typer.Option()] = "",
     follow: Annotated[bool, typer.Option(help="Transcribe while the meeting records, until the app creates .finish.")] = False,
+    output: Annotated[Path | None, typer.Option(help="Folder for the transcript and progress; the meeting folder when omitted.")] = None,
 ) -> None:
-    """Transcribe every track utterance by utterance, in time order across speakers, keeping who said what."""
+    """Transcribe every track utterance by utterance, in time order across speakers, keeping who said what.
+
+    Versus mode passes --output so a comparison run never writes the meeting's own transcript.json, which recovery
+    would otherwise adopt after a crash."""
     parent = os.getppid()
-    progress(folder, "Finding speech…", 0.02)
-    (folder / "transcript.partial.json").unlink(missing_ok=True)
+    out = output or folder
+    progress(out, "Finding speech…", 0.02)
+    (out / "transcript.partial.json").unlink(missing_ok=True)
     finish = folder / FINISH
     spoken = spoken_languages(languages)
     sources: dict[Path, Source] = {}
@@ -697,23 +702,23 @@ def transcribe(
             raise typer.BadParameter("No retained audio was found for this meeting.")
         work = sorted(((first, last, track) for track in tracks for first, last in track.ready(finishing)), key=lambda item: item[0])
         if work and speech is None:
-            progress(folder, "Loading the local speech model…", 0.05)
+            progress(out, "Loading the local speech model…", 0.05)
             speech = load_speech(models, model)
         for index, (first, last, track) in enumerate(work):
             assert speech is not None
             offset = first * FRAME / RATE
-            progress(folder, f"Transcribing · {int(offset // 60):02d}:{int(offset % 60):02d}", 0.05 + 0.95 * index / len(work))
+            progress(out, f"Transcribing · {int(offset // 60):02d}:{int(offset % 60):02d}", 0.05 + 0.95 * index / len(work))
             heard = hear(speech, track.clip(first, last), spoken, vocabulary)
             track.covered.append((first, last))
             if meaningful(heard.text, vocabulary):
                 segments.append(Segment(id=str(uuid4()), start=offset, end=last * FRAME / RATE, text=heard.text, source=track.source, language=heard.language, confidence=rounded(heard.confidence)))
-                publish(folder / "transcript.partial.json", Transcript(segments=without_echo(sorted(segments, key=lambda item: item.start))).model_dump_json())
+                publish(out / "transcript.partial.json", Transcript(segments=without_echo(sorted(segments, key=lambda item: item.start))).model_dump_json())
         if finishing:
             break
         time.sleep(POLL)
-    publish(folder / "transcript.json", Transcript(segments=without_echo(sorted(segments, key=lambda item: item.start))).model_dump_json())
+    publish(out / "transcript.json", Transcript(segments=without_echo(sorted(segments, key=lambda item: item.start))).model_dump_json())
     finish.unlink(missing_ok=True)
-    progress(folder, "Transcript saved locally", 1)
+    progress(out, "Transcript saved locally", 1)
 
 
 @app.command()

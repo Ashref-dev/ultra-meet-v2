@@ -65,15 +65,18 @@ final class LocalEngine: ObservableObject {
         }
         return preferences.spokenLanguages.joined(separator: ",")
     }
-    /// `live` follows a recording that is still being written, until `finish(folder:)`.
-    func transcribe(folder: URL, preferences: Preferences, live: Bool = false) async throws -> [TranscriptSegment] {
+    /// `live` follows a recording that is still being written, until `finish(folder:)`. `output` receives the
+    /// transcript and progress instead of the meeting folder (Versus mode).
+    func transcribe(folder: URL, preferences: Preferences, live: Bool = false, output: URL? = nil) async throws -> [TranscriptSegment] {
         try Task.checkCancellation()
         cancellationRequested = false
         busy = true
         defer { busy = false }
         try? FileManager.default.removeItem(at: folder.appendingPathComponent(Self.finishFile))
-        try await worker(["transcribe", folder.path, models.path, "--model", preferences.model.rawValue, "--languages", try spoken(preferences), "--vocabulary", preferences.vocabulary] + (live ? ["--follow"] : []), progressFolder: folder)
-        return try JSONDecoder().decode(WorkerTranscript.self, from: Data(contentsOf: folder.appendingPathComponent("transcript.json"))).segments
+        let destination = output ?? folder
+        try await worker(["transcribe", folder.path, models.path, "--model", preferences.model.rawValue, "--languages", try spoken(preferences), "--vocabulary", preferences.vocabulary]
+                         + (live ? ["--follow"] : []) + (output.map { ["--output", $0.path] } ?? []), progressFolder: destination)
+        return try JSONDecoder().decode(WorkerTranscript.self, from: Data(contentsOf: destination.appendingPathComponent("transcript.json"))).segments
     }
     /// Tells a live transcription that the recording's files are complete.
     func finish(folder: URL) throws {

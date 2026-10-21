@@ -133,6 +133,7 @@ struct MeetingRow: View {
         if state.queued.contains(meeting.id) { return "Waiting to transcribe" }
         if meeting.id == state.analyzingID { return "Analyzing" }
         if meeting.id == state.pendingID { return "Preparing" }
+        if state.versus?.meetingID == meeting.id && state.versus?.isRunning == true { return "Comparing models" }
         return nil
     }
 }

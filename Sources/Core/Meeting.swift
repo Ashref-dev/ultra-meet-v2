@@ -163,10 +163,12 @@ struct Meeting: Codable, Identifiable {
     }
     /// Lines that start inside the kept part. A line that starts exactly where the kept part ends is left out, so
     /// "End Meeting Here" never keeps the line right after it.
-    var keptSegments: [TranscriptSegment] {
-        guard isTrimmed else { return segments }
+    var keptSegments: [TranscriptSegment] { kept(segments) }
+    /// The given lines that fall in the kept part, for this meeting's transcript or another model's (Versus mode).
+    func kept(_ lines: [TranscriptSegment]) -> [TranscriptSegment] {
+        guard isTrimmed else { return lines }
         let range = keptRange
-        return segments.filter { $0.start >= range.lowerBound && (keepUntil == nil || $0.start < range.upperBound) }
+        return lines.filter { $0.start >= range.lowerBound && (keepUntil == nil || $0.start < range.upperBound) }
     }
     var keptDuration: Double { isTrimmed ? keptRange.upperBound - keptRange.lowerBound : duration }
     /// Keeps only `from` to `until`. `nil`, or a bound within a second of the start or the end, means the start or the

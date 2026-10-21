@@ -12,13 +12,17 @@ struct MeetingDetail: View {
     @State private var followsNewest = true
     /// Listed from the meeting folder when it changes, not on every render; `nil` until the first listing.
     @State private var listedAudio: [URL]?
+    /// Versus mode runs, read from the meeting folder when it changes or a run is saved.
+    @State private var versusRuns: [VersusRun] = []
+    @State private var versusHidden: Set<String>?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.offscreen) private var offscreen
     var isActive: Bool { meeting.id == state.activeID }
     var isLive: Bool { meeting.id == state.liveID }
     var isTranscribing: Bool { meeting.id == state.processingID || meeting.id == state.pendingID || state.queued.contains(meeting.id) }
     var isAnalyzing: Bool { meeting.id == state.analyzingID }
-    static let tabs = [TabItem(id: "Transcript", symbol: "waveform"), TabItem(id: "AI notes", symbol: "sparkles"), TabItem(id: "My notes", symbol: "pencil")]
+    static let tabs = [TabItem(id: "Transcript", symbol: "waveform"), TabItem(id: "AI notes", symbol: "sparkles"), TabItem(id: "My notes", symbol: "pencil"),
+                       TabItem(id: "Versus", symbol: "rectangle.split.3x1", experimental: true)]
     var body: some View {
         VStack(spacing: 0) {
             header
@@ -47,7 +51,11 @@ struct MeetingDetail: View {
         .onChange(of: AudioFolder(id: meeting.id, deleted: meeting.audioDeleted, status: meeting.status, offscreen: offscreen), initial: true) { _, folder in
             if !folder.offscreen { listedAudio = listAudio() }
         }
-        .onChange(of: meeting.id) { _, _ in playback.stop(); copied = false; followsNewest = true; tab = "Transcript" }
+        .onChange(of: meeting.id) { _, _ in playback.stop(); copied = false; followsNewest = true; tab = "Transcript"; versusHidden = nil }
+        .task(id: VersusSource(id: meeting.id, revision: state.versusRevision)) {
+            let library = state.library, id = meeting.id
+            versusRuns = await Task.detached(priority: .userInitiated) { library.loadVersus(id) }.value
+        }
         .onChange(of: tab) { _, _ in copied = false }
         .onChange(of: state.activeID) { _, id in if id != nil { playback.stop() } }
         .onChange(of: meeting.audioDeleted) { _, deleted in if deleted { playback.stop() } }
@@ -84,7 +92,7 @@ struct MeetingDetail: View {
                     HStack(spacing: 8) {
                         Button { copyContent() } label: {
                             HStack(spacing: 6) {
-                                Label(copied ? "Copied" : "Copy \(tab == "Transcript" ? "transcript" : tab == "AI notes" ? "AI notes" : "my notes")", systemImage: copied ? "checkmark" : "doc.on.doc")
+                                Label(copied ? "Copied" : "Copy \(copyNoun)", systemImage: copied ? "checkmark" : "doc.on.doc")
                                     .contentTransition(reduceMotion ? .identity : .symbolEffect(.replace))
                                 ShortcutHint("⌘⇧C")
                             }
@@ -92,7 +100,7 @@ struct MeetingDetail: View {
                         .buttonStyle(ControlStyle(compact: true)).animation(reduceMotion ? nil : Theme.feedback, value: copied)
                         .keyboardShortcut("c", modifiers: [.command, .shift])
                         .disabled(nothingToCopy)
-                        .help(nothingToCopy ? "Nothing to copy yet" : "Copy the \(tab == "AI notes" ? "AI notes" : tab.lowercased()) (⌘⇧C)")
+                        .help(nothingToCopy ? "Nothing to copy yet" : "Copy the \(copyNoun) (⌘⇧C)")
                         Button { state.export(meeting) } label: {
                             HStack(spacing: 6) { Label("Export", systemImage: "square.and.arrow.up"); ShortcutHint("⌘⇧E") }
                         }
@@ -137,6 +145,7 @@ struct MeetingDetail: View {
         MoreMenu(label: "More actions") {
             Button("Analyze with AI") { tab = "AI notes"; state.analyze(meeting.id) }.disabled(meeting.keptSegments.isEmpty || state.analyzingID != nil)
             Button("Transcribe Again") { state.transcribe(meeting.id) }.disabled(!canSeek || isTranscribing || isLive)
+            Button("Compare Speech Models…") { tab = "Versus" }
             Divider()
             Group {
                 Button("Play Meeting") { play(audioFiles) }
@@ -178,6 +187,9 @@ struct MeetingDetail: View {
             NoteEditor(text: Binding(get: { meeting.notes }, set: { value in state.update(meeting.id) { $0.notes = value } }), placeholder: "Anything worth remembering…", fontSize: 14, inset: CGSize(width: 19, height: 24), fade: 24, framed: false)
         case "AI notes":
             AnalysisView(state: state, meeting: meeting)
+        case "Versus":
+            VersusView(state: state, meeting: meeting, runs: versusRuns, blocker: versusBlocker, hidden: $versusHidden,
+                       clock: playback.clock, playing: playback.playing, seek: canSeek ? { play(audioFiles, at: $0) } : nil)
         default:
             transcript
         }
@@ -309,6 +321,18 @@ struct MeetingDetail: View {
         .padding(24).frame(maxWidth: .infinity, maxHeight: .infinity)
     }
     var canSeek: Bool { !meeting.audioDeleted && !isActive && !audioFiles.isEmpty }
+    /// Why other models can't transcribe this meeting for Versus mode right now.
+    var versusBlocker: String? {
+        if isActive || isLive { return "Versus mode compares models on a finished meeting. It’s available after you stop recording." }
+        if isTranscribing { return "Available when this meeting’s transcription finishes." }
+        if meeting.audioDeleted { return "This meeting’s audio was deleted, so other models can’t transcribe it. Earlier comparisons stay readable." }
+        if audioFiles.isEmpty { return listedAudio == nil ? "Looking for this meeting’s audio…" : "This meeting’s audio files are missing from its folder, so other models can’t transcribe it." }
+        if let job = state.versus, job.isRunning, job.meetingID != meeting.id {
+            return "Versus mode is comparing models on another meeting. This one can be compared when that finishes."
+        }
+        return nil
+    }
+    struct VersusSource: Equatable { let id: UUID; let revision: Int }
     /// Finished meetings only, with or without audio: the trim is a window on the transcript.
     var canTrim: Bool { !isActive && !isLive && !isTranscribing && !isAnalyzing }
     var trimAction: ((Double?, Double?) -> Void)? {
@@ -386,11 +410,20 @@ struct MeetingDetail: View {
     var playRange: (from: Double, until: Double?) {
         (meeting.keptRange.lowerBound, meeting.keepUntil == nil ? nil : meeting.keptRange.upperBound)
     }
+    var copyNoun: String {
+        switch tab {
+        case "Transcript": return "transcript"
+        case "My notes": return "my notes"
+        case "Versus": return "comparison"
+        default: return "AI notes"
+        }
+    }
     /// Checked on every render, so it never builds the text; `copyContent` does that once, on click.
     var nothingToCopy: Bool {
         switch tab {
         case "Transcript": return meeting.keptSegments.isEmpty
         case "My notes": return meeting.notes.isEmpty
+        case "Versus": return versusRuns.isEmpty
         default: return meeting.summary.isEmpty
         }
     }
@@ -399,11 +432,18 @@ struct MeetingDetail: View {
         let text = switch tab {
         case "Transcript": meeting.transcript
         case "My notes": meeting.notes
+        case "Versus": versusText
         default: meeting.shareableNotes
         }
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)
         copied = true
+    }
+    /// The comparison as shown: the same columns, with finished runs only.
+    var versusText: String {
+        let comparison = VersusComparison(columns: VersusComparison.columns(meeting: meeting, runs: versusRuns, job: nil, partial: []))
+        let shown = versusHidden.map { hidden in comparison.columns.map(\.id).filter { !hidden.contains($0) } } ?? comparison.columns.prefix(4).map(\.id)
+        return comparison.markdown(title: meeting.title, shown: Set(shown))
     }
 }
 
