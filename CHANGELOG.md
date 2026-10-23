@@ -2,7 +2,7 @@
 
 All notable changes are listed here. Versions follow [Semantic Versioning](https://semver.org): `0.x` releases may still change behavior between minor versions.
 
-## Unreleased
+## 0.7.2 · 2026-10-23
 
 - Versus mode (experimental, marked EXP): a meeting's Versus tab transcribes the meeting with the downloaded speech models you choose, one after another, and shows their transcripts side by side. Lines covering the same speech share a row, words only one model heard are marked, and each model shows its lines, words, unsure and missed lines and how long it took. Show only the lines where models differ, click any line to hear it, copy the comparison, or make a model the default for new meetings. Comparisons are stored next to the meeting and never change its transcript; recordings and transcriptions always go first.
 - Recording is more robust on every kind of Mac and audio setup. The audio callback only copies samples; conversion and disk writes happen separately, so a busy disk can't cause dropouts. A device that stops delivering audio (unplugged, a stalled driver, after sleep) is reopened within seconds, and the gap is kept as silence so both tracks stay in sync. Timing uses the moment each buffer was captured.

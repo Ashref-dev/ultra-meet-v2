@@ -2,7 +2,7 @@
 
 What was verified for the current release, and how. Update this file with every release; say plainly what was not verified.
 
-## Unreleased
+## 0.7.2
 
 Versus mode. `swift test`: 68 pass (9 new: alignment of lines with slightly different edges, the other side never sharing a row, agreement ignoring case, accents and punctuation, marked words, missed lines counted only against complete transcripts, column order and states with a trim, storage apart from the transcript with unreadable files skipped, a failing model reported without touching the meeting and releasing its protection, a recording or transcription putting the running model back in line). `basedpyright` 0 errors, `ruff` clean. Worker `transcribe --output` run on a copy of a real 5-minute meeting with Qwen3-ASR 0.6B (31 s) and Whisper Large v3 Turbo (352 s, about three times the estimate from the eval set, on a busy Mac): the transcript, partial and progress files went to the output folder and the meeting folder's listing was unchanged. The real three-way comparison (meeting's Qwen3-ASR 1.7B, 0.6B, Whisper) lined up as 139 rows with no line split across rows; Whisper's "Thank you." on silence and the language differences show as marked words. Not seen on screen: the Versus tab, picker, progress, column chips, Differences filter, popover and playback highlight.
 
